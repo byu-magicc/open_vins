@@ -1,36 +1,39 @@
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import ThisLaunchFileDir
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('dataset', default_value='gazebo_sinusoid/center_trajectory.txt'),
-        DeclareLaunchArgument('config', default_value='magicc_fixedwing_sim'),
         DeclareLaunchArgument('rviz_enable', default_value='false'),
-        DeclareLaunchArgument('max_cameras', default_value='1'),
-        DeclareLaunchArgument('use_stereo', default_value='false'),
-        DeclareLaunchArgument('feat_dist_min', default_value='45.0'),
-        DeclareLaunchArgument('feat_dist_max', default_value='55.0'),
-        DeclareLaunchArgument('freq_cam', default_value='10.0'),
-        DeclareLaunchArgument('freq_imu', default_value='400.0'),
-        DeclareLaunchArgument('namespace', default_value='ov_msckf_single_agent'),
+        DeclareLaunchArgument('plotting_enable', default_value='false'),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
             launch_arguments={
-                'dataset': LaunchConfiguration('dataset'),
-                'config': LaunchConfiguration('config'),
                 'rviz_enable': LaunchConfiguration('rviz_enable'),
-                'max_cameras': LaunchConfiguration('max_cameras'),
-                'use_stereo': LaunchConfiguration('use_stereo'),
-                'feat_dist_min': LaunchConfiguration('feat_dist_min'),
-                'feat_dist_max': LaunchConfiguration('feat_dist_max'),
-                'freq_cam': LaunchConfiguration('freq_cam'),
-                'freq_imu': LaunchConfiguration('freq_imu'),
-                'namespace': LaunchConfiguration('namespace'),
+                'namespace': 'ov_msckf_0',
+                'dataset': 'gazebo_sinusoid/center_trajectory.txt',
+                'config': 'magicc_fixedwing_sim',
+                'max_cameras': '1',
+                'use_stereo': 'false',
+                'feat_dist_min': '45.0',
+                'feat_dist_max': '55.0',
             }.items(),
         ),
+
+        Node(
+            package='ov_eval',
+            executable='gpsdn_plotter.py',
+            name='gpsdn_plotter',
+            output='screen',
+            condition=IfCondition(LaunchConfiguration("plotting_enable")),
+            parameters=[{
+                'agent_namespaces': ['ov_msckf_0']
+            }]
+        )
     ])

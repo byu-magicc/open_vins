@@ -13,8 +13,13 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
             launch_arguments={
-                'dataset': 'gazebo_sinusoid/center_trajectory.txt',
                 'namespace': 'ov_msckf_0',
+                'dataset': 'gazebo_sinusoid/center_trajectory.txt',
+                'config': 'magicc_fixedwing_sim',
+                'max_cameras': '1',
+                'use_stereo': 'false',
+                'feat_dist_min': '45.0',
+                'feat_dist_max': '55.0',
             }.items(),
         ),
 
@@ -22,8 +27,13 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
             launch_arguments={
-                'dataset': 'gazebo_sinusoid/left_trajectory.txt',
                 'namespace': 'ov_msckf_1',
+                'dataset': 'gazebo_sinusoid/left_trajectory.txt',
+                'config': 'magicc_fixedwing_sim',
+                'max_cameras': '1',
+                'use_stereo': 'false',
+                'feat_dist_min': '45.0',
+                'feat_dist_max': '55.0',
             }.items(),
         ),
 
@@ -31,8 +41,13 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
             launch_arguments={
-                'dataset': 'gazebo_sinusoid/right_trajectory.txt',
                 'namespace': 'ov_msckf_2',
+                'dataset': 'gazebo_sinusoid/right_trajectory.txt',
+                'config': 'magicc_fixedwing_sim',
+                'max_cameras': '1',
+                'use_stereo': 'false',
+                'feat_dist_min': '45.0',
+                'feat_dist_max': '55.0',
             }.items(),
         ),
 

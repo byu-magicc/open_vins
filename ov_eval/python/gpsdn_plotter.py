@@ -96,13 +96,18 @@ class DataPlotterNode(Node):
             plt.plot(truth_position[key][:, 0], truth_position[key][:, 1], color='blue')
             plt.plot(estimated_position[key][:, 0], estimated_position[key][:, 1], color='red')
 
+        # Add legend
         blue_patch = mpatches.Patch(color='blue', label='Truth')
         red_patch = mpatches.Patch(color='red', label='Estimated')
         plt.legend(handles=[blue_patch, red_patch], handlelength=1.5, handleheight=0.1)
 
+        # Set plot labels
         plt.xlabel('X Position (m)')
         plt.ylabel('Y Position (m)')
         plt.title('XY Position of Agents')
+
+        # Lock aspect ratio
+        plt.axis('equal')
 
         # Save figure, using iteration number as filename
         counter = 0
