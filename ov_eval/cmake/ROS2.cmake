@@ -127,6 +127,7 @@ install(TARGETS plot_trajectories DESTINATION lib/${PROJECT_NAME})
 #    catkin_install_python(PROGRAMS python/pid_sys.py DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 #endif ()
 
+install(PROGRAMS python/gpsdn_plotter.py DESTINATION lib/${PROJECT_NAME})
 
 # finally define this as the package
 ament_package()
