@@ -9,11 +9,14 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('dataset', default_value='gazebo_sinusoid/center_trajectory.txt'),
         DeclareLaunchArgument('config', default_value='magicc_fixedwing_sim'),
-        DeclareLaunchArgument('rviz_enable', default_value='true'),
+        DeclareLaunchArgument('rviz_enable', default_value='false'),
         DeclareLaunchArgument('max_cameras', default_value='1'),
         DeclareLaunchArgument('use_stereo', default_value='false'),
         DeclareLaunchArgument('feat_dist_min', default_value='45.0'),
         DeclareLaunchArgument('feat_dist_max', default_value='55.0'),
+        DeclareLaunchArgument('freq_cam', default_value='10.0'),
+        DeclareLaunchArgument('freq_imu', default_value='400.0'),
+        DeclareLaunchArgument('namespace', default_value='ov_msckf_single_agent'),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
@@ -25,6 +28,9 @@ def generate_launch_description():
                 'use_stereo': LaunchConfiguration('use_stereo'),
                 'feat_dist_min': LaunchConfiguration('feat_dist_min'),
                 'feat_dist_max': LaunchConfiguration('feat_dist_max'),
+                'freq_cam': LaunchConfiguration('freq_cam'),
+                'freq_imu': LaunchConfiguration('freq_imu'),
+                'namespace': LaunchConfiguration('namespace'),
             }.items(),
         ),
     ])
