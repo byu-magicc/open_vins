@@ -475,7 +475,7 @@ std::vector<std::pair<size_t, Eigen::VectorXf>> Simulator::project_pointcloud(co
     Eigen::Vector3d p_FinC = R_ItoC * p_FinI + p_IinC;
 
     // Skip cloud if too far away
-    if (p_FinC(2) > params.sim_max_feature_gen_distance || p_FinC(2) < 0.1)
+    if (!params.sim_use_ground_plane_features && (p_FinC(2) > params.sim_max_feature_gen_distance || p_FinC(2) < 0.1))
       continue;
 
     // Project to normalized coordinates
@@ -511,6 +511,10 @@ void Simulator::generate_points(const Eigen::Matrix3d &R_GtoI, const Eigen::Vect
   Eigen::Matrix<double, 3, 1> p_IinC = params.camera_extrinsics.at(camid).block(4, 0, 3, 1);
   std::shared_ptr<ov_core::CamBase> camera = params.camera_intrinsics.at(camid);
 
+  // Calculate the position and rotation of the camera in global frame
+  Eigen::Matrix3d R_CtoG = R_GtoI.transpose() * R_ItoC.transpose();
+  Eigen::Vector3d p_CinG = p_IinG + R_CtoG * -p_IinC;
+
   // Generate the desired number of features
   for (int i = 0; i < numpts; i++) {
 
@@ -526,20 +530,54 @@ void Simulator::generate_points(const Eigen::Matrix3d &R_GtoI, const Eigen::Vect
     // Undistort this point to our normalized coordinates
     cv::Point2f uv_norm = camera->undistort_cv(uv_dist);
 
-    // Generate a random depth
-    // TODO: Add option for ground points only
-    std::uniform_real_distribution<double> gen_depth(params.sim_min_feature_gen_distance, params.sim_max_feature_gen_distance);
-    double depth = gen_depth(gen_state_init);
+    // Check which kind of point generation we're using
+    Eigen::Vector3d p_FinG = Eigen::Vector3d::Zero();
+    if (!params.sim_use_ground_plane_features) {
 
-    // Get the 3d point
-    Eigen::Vector3d bearing;
-    bearing << uv_norm.x, uv_norm.y, 1;
-    Eigen::Vector3d p_FinC;
-    p_FinC = depth * bearing;
+      // Generate a random depth
+      std::uniform_real_distribution<double> gen_depth(params.sim_min_feature_gen_distance, params.sim_max_feature_gen_distance);
+      double depth = gen_depth(gen_state_init);
 
-    // Move to the global frame of reference
-    Eigen::Vector3d p_FinI = R_ItoC.transpose() * (p_FinC - p_IinC);
-    Eigen::Vector3d p_FinG = R_GtoI.transpose() * p_FinI + p_IinG;
+      // Get the 3d point
+      Eigen::Vector3d bearing;
+      bearing << uv_norm.x, uv_norm.y, 1;
+      Eigen::Vector3d p_FinC;
+      p_FinC = depth * bearing;
+
+      // Move to the global frame of reference
+      Eigen::Vector3d p_FinI = R_ItoC.transpose() * (p_FinC - p_IinC);
+      p_FinG = R_GtoI.transpose() * p_FinI + p_IinG;
+
+    } else {
+
+      // Get the height deviation from the ground plane
+      std::uniform_real_distribution<double> get_height_deviation(-0.5 * params.sim_ground_plane_features_range,
+                                                                  0.5 * params.sim_ground_plane_features_range);
+      double height_deviation = get_height_deviation(gen_state_init);
+
+      // Calculate the bearing of the point in camera frame
+      Eigen::Vector3d bearing;
+      bearing << uv_norm.x, uv_norm.y, 1;
+      bearing.normalize();
+
+      // Rotate bearing to global frame
+      Eigen::Vector3d bearing_global = R_CtoG * bearing;
+
+      // Calculate the distance from the camera to the deviated ground plane
+      double alpha = (height_deviation - p_CinG(2)) / bearing_global(2);
+
+      // Make sure point is always in view of the camera and not too close
+      // TODO: What do we do if the camera is looking at the sky? This will probably cause an error...
+      if (alpha <= 0.0) {
+        i--;
+        continue;
+      } else if (alpha < 0.3) {
+        alpha = 0.3;
+      }
+
+      // Calculate the 3d point in global frame
+      p_FinG = p_CinG + alpha * bearing_global;
+    }
 
     // Append this as a new feature
     featmap.insert({id_map, p_FinG});
