@@ -21,8 +21,8 @@ def generate_launch_description():
                 'config': 'magicc_fixedwing_sim',
                 'max_cameras': '1',
                 'use_stereo': 'false',
-                'feat_dist_min': '45.0',
-                'feat_dist_max': '55.0',
+                'use_ground_plane_features': 'true',
+                'ground_plane_features_range': '2.0',
             }.items(),
         ),
 

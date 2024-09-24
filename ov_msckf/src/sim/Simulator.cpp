@@ -527,6 +527,7 @@ void Simulator::generate_points(const Eigen::Matrix3d &R_GtoI, const Eigen::Vect
     cv::Point2f uv_norm = camera->undistort_cv(uv_dist);
 
     // Generate a random depth
+    // TODO: Add option for ground points only
     std::uniform_real_distribution<double> gen_depth(params.sim_min_feature_gen_distance, params.sim_max_feature_gen_distance);
     double depth = gen_depth(gen_state_init);
 

@@ -127,3 +127,5 @@ sim_freq_cam: 10
 sim_freq_imu: 400
 sim_min_feature_gen_dist: 5.0
 sim_max_feature_gen_dist: 7.0
+sim_use_ground_plane_features: true
+sim_ground_plane_features_range: 2.0

@@ -71,6 +71,14 @@ launch_args = [
         name="feat_dist_max",
         default_value="7.0"
     ),
+    DeclareLaunchArgument(
+        name="use_ground_plane_features",
+        default_value="false"
+    ),
+    DeclareLaunchArgument(
+        name="ground_plane_features_range",
+        default_value="2.0"
+    ),
 
     DeclareLaunchArgument(
         name="freq_cam",
@@ -277,6 +285,8 @@ def launch_setup(context):
 
             {"sim_min_feature_gen_dist": LaunchConfiguration("feat_dist_min")},
             {"sim_max_feature_gen_dist": LaunchConfiguration("feat_dist_max")},
+            {"sim_use_ground_plane_features": LaunchConfiguration("use_ground_plane_features")},
+            {"sim_ground_plane_features_range": LaunchConfiguration("ground_plane_features_range")},
 
             {"save_total_state": LaunchConfiguration("dosave_state")},
             {"filepath_est": path_state_est},

@@ -536,6 +536,12 @@ struct VioManagerOptions {
   /// Feature distance we generate features from (maximum)
   double sim_max_feature_gen_distance = 10;
 
+  /// Use ground plane based point tracks rather than distance based ones
+  bool sim_use_ground_plane_features = false;
+
+  /// Range in height of points to generate, if ground features are being used
+  double sim_ground_plane_features_range = 2.0;
+
   /**
    * @brief This function will load print out all simulated parameters.
    * This allows for visual checking that everything was loaded properly from ROS/CMD parsers.
@@ -554,18 +560,22 @@ struct VioManagerOptions {
       parser->parse_config("sim_freq_imu", sim_freq_imu);
       parser->parse_config("sim_min_feature_gen_dist", sim_min_feature_gen_distance);
       parser->parse_config("sim_max_feature_gen_dist", sim_max_feature_gen_distance);
+      parser->parse_config("sim_use_ground_plane_features", sim_use_ground_plane_features);
+      parser->parse_config("sim_ground_plane_features_range", sim_ground_plane_features_range);
     }
     PRINT_DEBUG("SIMULATION PARAMETERS:\n");
     PRINT_WARNING(BOLDRED "  - state init seed: %d \n" RESET, sim_seed_state_init);
     PRINT_WARNING(BOLDRED "  - perturb seed: %d \n" RESET, sim_seed_preturb);
     PRINT_WARNING(BOLDRED "  - measurement seed: %d \n" RESET, sim_seed_measurements);
     PRINT_WARNING(BOLDRED "  - do perturb?: %d\n" RESET, sim_do_perturbation);
+    PRINT_WARNING(BOLDRED "  - use ground plane points?: %d\n" RESET, sim_use_ground_plane_features);
     PRINT_DEBUG("  - traj path: %s\n", sim_traj_path.c_str());
     PRINT_DEBUG("  - dist thresh: %.2f\n", sim_distance_threshold);
     PRINT_DEBUG("  - cam feq: %.2f\n", sim_freq_cam);
     PRINT_DEBUG("  - imu feq: %.2f\n", sim_freq_imu);
     PRINT_DEBUG("  - min feat dist: %.2f\n", sim_min_feature_gen_distance);
     PRINT_DEBUG("  - max feat dist: %.2f\n", sim_max_feature_gen_distance);
+    PRINT_DEBUG("  - ground feat range: %.2f\n", sim_ground_plane_features_range);
   }
 };
 
