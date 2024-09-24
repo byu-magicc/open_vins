@@ -9,14 +9,12 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('rviz_enable', default_value='false'),
         DeclareLaunchArgument('plotting_enable', default_value='false'),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
             launch_arguments={
-                'rviz_enable': LaunchConfiguration('rviz_enable'),
-                'namespace': 'ov_msckf_0',
+                'namespace': 'ov_msckf',
                 'dataset': 'gazebo_sinusoid/center_trajectory.txt',
                 'config': 'magicc_fixedwing_sim',
                 'max_cameras': '1',
@@ -33,7 +31,7 @@ def generate_launch_description():
             output='screen',
             condition=IfCondition(LaunchConfiguration("plotting_enable")),
             parameters=[{
-                'agent_namespaces': ['ov_msckf_0']
+                'agent_namespaces': ['ov_msckf']
             }]
         )
     ])

@@ -13,7 +13,7 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
             launch_arguments={
-                'namespace': 'ov_msckf_0',
+                'namespace': 'ov_msckf',
                 'dataset': 'gazebo_sinusoid/center_trajectory.txt',
                 'config': 'magicc_fixedwing_sim',
                 'max_cameras': '1',
@@ -27,7 +27,8 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
             launch_arguments={
-                'namespace': 'ov_msckf_1',
+                'rviz_enable': 'false',
+                'namespace': 'ov_msckf_left',
                 'dataset': 'gazebo_sinusoid/left_trajectory.txt',
                 'config': 'magicc_fixedwing_sim',
                 'max_cameras': '1',
@@ -41,7 +42,8 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
             launch_arguments={
-                'namespace': 'ov_msckf_2',
+                'rviz_enable': 'false',
+                'namespace': 'ov_msckf_right',
                 'dataset': 'gazebo_sinusoid/right_trajectory.txt',
                 'config': 'magicc_fixedwing_sim',
                 'max_cameras': '1',
@@ -60,7 +62,7 @@ def generate_launch_description():
             output='screen',
             condition=IfCondition(LaunchConfiguration("plotting_enable")),
             parameters=[{
-                'agent_namespaces': ['ov_msckf_0', 'ov_msckf_1', 'ov_msckf_2']
+                'agent_namespaces': ['ov_msckf', 'ov_msckf_left', 'ov_msckf_right']
             }]
         )
     ])
