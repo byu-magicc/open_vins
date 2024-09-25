@@ -558,7 +558,7 @@ void Simulator::generate_points(const Eigen::Matrix3d &R_GtoI, const Eigen::Vect
       // Calculate the bearing of the point in camera frame
       Eigen::Vector3d bearing;
       bearing << uv_norm.x, uv_norm.y, 1;
-      bearing.normalize();
+      bearing.normalize();  // Ensures alpha is distance in meters
 
       // Rotate bearing to global frame
       Eigen::Vector3d bearing_global = R_CtoG * bearing;
@@ -566,13 +566,14 @@ void Simulator::generate_points(const Eigen::Matrix3d &R_GtoI, const Eigen::Vect
       // Calculate the distance from the camera to the deviated ground plane
       double alpha = (height_deviation - p_CinG(2)) / bearing_global(2);
 
-      // Make sure point is always in view of the camera and not too close
-      // TODO: What do we do if the camera is looking at the sky? This will probably cause an error...
-      if (alpha <= 0.0) {
-        i--;
-        continue;
-      } else if (alpha < 0.3) {
-        alpha = 0.3;
+      // Set alpha to a very large value if negative (pointing up) or too far away (10km)
+      if (alpha < 0 || alpha > 10000.0) {
+        alpha = 10000.0;
+      }
+
+      // If the camera is in (or very close) the ground plane, use fixed alpha length to avoid strange edge cases
+      if (p_CinG(2) < 0.6 * params.sim_ground_plane_features_range) {
+        alpha = 0.25;
       }
 
       // Calculate the 3d point in global frame
