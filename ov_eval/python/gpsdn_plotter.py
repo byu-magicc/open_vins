@@ -117,11 +117,12 @@ class DataPlotterNode(Node):
         # Plot position error data
         plt.figure()
         for key in self.truth_data.keys():
-            plt.plot(position_error[key], color='blue')
-        plt.xlabel('Time (s)')
+            plt.plot(position_error[key], label=key)
         plt.ylabel('Position Error (m)')
         plt.title('Position Error of Agents')
-        plt.axis('equal')
+        plt.legend()
+        plt.grid()
+        plt.gca().set_ylim(bottom=0)
         counter = 0
         while os.path.exists(f'position_error_{counter}.png'):
             counter += 1
