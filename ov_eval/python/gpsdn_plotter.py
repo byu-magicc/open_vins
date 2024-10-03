@@ -90,30 +90,42 @@ class DataPlotterNode(Node):
             estimated_position[key] = np.array(estimated_position[key])
             estimated_orientation[key] = np.array(estimated_orientation[key])
 
-        # Plot data
+        # Calculate errors between truth and estimate
+        position_error = {}
+        orientation_error = {}
+        for key in self.truth_data.keys():
+            position_error[key] = np.linalg.norm(truth_position[key] - estimated_position[key], axis=1)
+            orientation_error[key] = np.linalg.norm(truth_orientation[key] - estimated_orientation[key], axis=1)
+
+        # Plot position data
         plt.figure()
         for key in self.truth_data.keys():
             plt.plot(truth_position[key][:, 0], truth_position[key][:, 1], color='blue')
             plt.plot(estimated_position[key][:, 0], estimated_position[key][:, 1], color='red')
-
-        # Add legend
         blue_patch = mpatches.Patch(color='blue', label='Truth')
         red_patch = mpatches.Patch(color='red', label='Estimated')
         plt.legend(handles=[blue_patch, red_patch], handlelength=1.5, handleheight=0.1)
-
-        # Set plot labels
         plt.xlabel('X Position (m)')
         plt.ylabel('Y Position (m)')
         plt.title('XY Position of Agents')
-
-        # Lock aspect ratio
         plt.axis('equal')
-
-        # Save figure, using iteration number as filename
         counter = 0
         while os.path.exists(f'xy_position_{counter}.png'):
             counter += 1
         plt.savefig(f'xy_position_{counter}.png')
+
+        # Plot position error data
+        plt.figure()
+        for key in self.truth_data.keys():
+            plt.plot(position_error[key], color='blue')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Position Error (m)')
+        plt.title('Position Error of Agents')
+        plt.axis('equal')
+        counter = 0
+        while os.path.exists(f'position_error_{counter}.png'):
+            counter += 1
+        plt.savefig(f'position_error_{counter}.png')
 
         self.get_logger().info('Plots generated successfully!')
 
