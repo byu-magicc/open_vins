@@ -566,14 +566,9 @@ void Simulator::generate_points(const Eigen::Matrix3d &R_GtoI, const Eigen::Vect
       // Calculate the distance from the camera to the deviated ground plane
       double alpha = (height_deviation - p_CinG(2)) / bearing_global(2);
 
-      // Set alpha to a very large value if negative (pointing up) or too far away (10km)
-      if (alpha < 0 || alpha > 10000.0) {
-        alpha = 10000.0;
-      }
-
-      // If the camera is in (or very close) the ground plane, use fixed alpha length to avoid strange edge cases
-      if (p_CinG(2) < 0.6 * params.sim_ground_plane_features_range) {
-        alpha = 0.25;
+      // Skip point if it is behind the camera
+      if (alpha <= 0) {
+        continue;
       }
 
       // Calculate the 3d point in global frame
