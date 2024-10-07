@@ -90,6 +90,16 @@ class DataPlotterNode(Node):
             estimated_position[key] = np.array(estimated_position[key])
             estimated_orientation[key] = np.array(estimated_orientation[key])
 
+        # Get filenames for saving plots and data
+        counter = 0
+        while os.path.exists(f'xy_position_{counter}.png') \
+                or os.path.exists(f'position_error_{counter}.png') \
+                or os.path.exists(f'data_{counter}.npz'):
+            counter += 1
+        position_filename = f'xy_position_{counter}.png'
+        error_filename = f'position_error_{counter}.png'
+        data_filename = f'data_{counter}.npz'
+
         # Calculate errors between truth and estimate
         position_error = {}
         orientation_error = {}
@@ -109,10 +119,7 @@ class DataPlotterNode(Node):
         plt.ylabel('Y Position (m)')
         plt.title('XY Position of Agents')
         plt.axis('equal')
-        counter = 0
-        while os.path.exists(f'xy_position_{counter}.png'):
-            counter += 1
-        plt.savefig(f'xy_position_{counter}.png')
+        plt.savefig(position_filename)
 
         # Plot position error data
         plt.figure()
@@ -123,12 +130,21 @@ class DataPlotterNode(Node):
         plt.legend()
         plt.grid()
         plt.gca().set_ylim(bottom=0)
-        counter = 0
-        while os.path.exists(f'position_error_{counter}.png'):
-            counter += 1
-        plt.savefig(f'position_error_{counter}.png')
+        plt.savefig(error_filename)
 
-        self.get_logger().info('Plots generated successfully!')
+        # Save all data to a .npz file
+        data = {}
+        for key in self.truth_data.keys():
+            data[f'{key}_truth_position'] = truth_position[key]
+            data[f'{key}_truth_orientation'] = truth_orientation[key]
+            data[f'{key}_estimated_position'] = estimated_position[key]
+            data[f'{key}_estimated_orientation'] = estimated_orientation[key]
+            data[f'{key}_position_error'] = position_error[key]
+            data[f'{key}_orientation_error'] = orientation_error[key]
+        counter = 0
+        np.savez(data_filename, **data)
+
+        self.get_logger().info('Plots generated and data saved successfully!')
 
 def main(args=None):
     rclpy.init(args=args)
@@ -139,7 +155,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
 
-    node.get_logger().info('Generating plots...')
+    node.get_logger().info('Generating plots and saving data...')
     node.plot_data()
     node.destroy_node()
     rclpy.shutdown()
