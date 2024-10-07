@@ -37,17 +37,19 @@ namespace ov_type {
 class IMU : public Type {
 
 public:
-  IMU() : Type(15) {
+  IMU() : Type(21) {
 
     // Create all the sub-variables
     _pose = std::shared_ptr<PoseJPL>(new PoseJPL());
     _v = std::shared_ptr<Vec>(new Vec(3));
     _bg = std::shared_ptr<Vec>(new Vec(3));
     _ba = std::shared_ptr<Vec>(new Vec(3));
+    _delta_pose = std::shared_ptr<PoseJPL>(new PoseJPL());
 
     // Set our default state value
-    Eigen::VectorXd imu0 = Eigen::VectorXd::Zero(16, 1);
+    Eigen::VectorXd imu0 = Eigen::VectorXd::Zero(23, 1);
     imu0(3) = 1.0;
+    imu0(19) = 1.0;
     set_value_internal(imu0);
     set_fej_internal(imu0);
   }
@@ -67,6 +69,7 @@ public:
     _v->set_local_id(_pose->id() + ((new_id != -1) ? _pose->size() : 0));
     _bg->set_local_id(_v->id() + ((new_id != -1) ? _v->size() : 0));
     _ba->set_local_id(_bg->id() + ((new_id != -1) ? _bg->size() : 0));
+    _delta_pose->set_local_id(_ba->id() + ((new_id != -1) ? _ba->size() : 0));
   }
 
   /**
@@ -75,15 +78,20 @@ public:
    *
    * @param dx 15 DOF vector encoding update using the following order (q, p, v, bg, ba)
    */
+  // TODO: Check usages of this function
   void update(const Eigen::VectorXd &dx) override {
 
     assert(dx.rows() == _size);
 
-    Eigen::Matrix<double, 16, 1> newX = _value;
+    Eigen::Matrix<double, 23, 1> newX = _value;
 
     Eigen::Matrix<double, 4, 1> dq;
     dq << .5 * dx.block(0, 0, 3, 1), 1.0;
     dq = ov_core::quatnorm(dq);
+
+    Eigen::Matrix<double, 4, 1> d_delta_q;
+    d_delta_q << .5 * dx.block(15, 0, 3, 1), 1.0;
+    d_delta_q = ov_core::quatnorm(d_delta_q);
 
     newX.block(0, 0, 4, 1) = ov_core::quat_multiply(dq, quat());
     newX.block(4, 0, 3, 1) += dx.block(3, 0, 3, 1);
@@ -91,6 +99,9 @@ public:
     newX.block(7, 0, 3, 1) += dx.block(6, 0, 3, 1);
     newX.block(10, 0, 3, 1) += dx.block(9, 0, 3, 1);
     newX.block(13, 0, 3, 1) += dx.block(12, 0, 3, 1);
+
+    newX.block(16, 0, 4, 1) = ov_core::quat_multiply(d_delta_q, delta_quat());
+    newX.block(20, 0, 3, 1) += dx.block(18, 0, 3, 1);
 
     set_value(newX);
   }
@@ -125,6 +136,10 @@ public:
       return _bg;
     } else if (check == _ba) {
       return _ba;
+    } else if (check == _delta_pose) {
+      return _delta_pose;
+    } else if (check == _delta_pose->check_if_subvariable(check)) {
+      return _delta_pose->check_if_subvariable(check);
     }
     return nullptr;
   }
@@ -165,6 +180,24 @@ public:
   // FEJ accel bias access
   Eigen::Matrix<double, 3, 1> bias_a_fej() const { return _ba->fej(); }
 
+  /// Delta Rotation access
+  Eigen::Matrix<double, 3, 3> delta_Rot() const { return _delta_pose->Rot(); }
+
+  /// Delta FEJ Rotation access
+  Eigen::Matrix<double, 3, 3> delta_Rot_fej() const { return _delta_pose->Rot_fej(); }
+
+  /// Delta Rotation access quaternion
+  Eigen::Matrix<double, 4, 1> delta_quat() const { return _delta_pose->quat(); }
+
+  /// Delta FEJ Rotation access quaternion
+  Eigen::Matrix<double, 4, 1> delta_quat_fej() const { return _delta_pose->quat_fej(); }
+
+  /// Delta Position access
+  Eigen::Matrix<double, 3, 1> delta_pos() const { return _delta_pose->pos(); }
+
+  /// Delta FEJ position access
+  Eigen::Matrix<double, 3, 1> delta_pos_fej() const { return _delta_pose->pos_fej(); }
+
   /// Pose type access
   std::shared_ptr<PoseJPL> pose() { return _pose; }
 
@@ -183,6 +216,15 @@ public:
   /// Acceleration bias access
   std::shared_ptr<Vec> ba() { return _ba; }
 
+  /// Delta Pose type access
+  std::shared_ptr<PoseJPL> delta_pose() { return _delta_pose; }
+
+  /// Delta Quaternion type access
+  std::shared_ptr<JPLQuat> delta_q() { return _delta_pose->q(); }
+
+  /// Delta Position type access
+  std::shared_ptr<Vec> delta_p() { return _delta_pose->p(); }
+
 protected:
   /// Pose subvariable
   std::shared_ptr<PoseJPL> _pose;
@@ -196,19 +238,23 @@ protected:
   /// Acceleration bias subvariable
   std::shared_ptr<Vec> _ba;
 
+  /// Delta pose subvariable, used by partial-update msckf algorithm to construct multi-agent backend
+  std::shared_ptr<PoseJPL> _delta_pose;
+
   /**
    * @brief Sets the value of the estimate
    * @param new_value New value we should set
    */
   void set_value_internal(const Eigen::MatrixXd &new_value) {
 
-    assert(new_value.rows() == 16);
+    assert(new_value.rows() == 23);
     assert(new_value.cols() == 1);
 
     _pose->set_value(new_value.block(0, 0, 7, 1));
     _v->set_value(new_value.block(7, 0, 3, 1));
     _bg->set_value(new_value.block(10, 0, 3, 1));
     _ba->set_value(new_value.block(13, 0, 3, 1));
+    _delta_pose->set_value(new_value.block(16, 0, 7, 1));
 
     _value = new_value;
   }
@@ -219,13 +265,14 @@ protected:
    */
   void set_fej_internal(const Eigen::MatrixXd &new_value) {
 
-    assert(new_value.rows() == 16);
+    assert(new_value.rows() == 23);
     assert(new_value.cols() == 1);
 
     _pose->set_fej(new_value.block(0, 0, 7, 1));
     _v->set_fej(new_value.block(7, 0, 3, 1));
     _bg->set_fej(new_value.block(10, 0, 3, 1));
     _ba->set_fej(new_value.block(13, 0, 3, 1));
+    _delta_pose->set_fej(new_value.block(16, 0, 7, 1));
 
     _fej = new_value;
   }
