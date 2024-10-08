@@ -111,7 +111,7 @@ public:
    * @param gt_states Should be loaded with groundtruth states, see load_gt_file() for details
    * @return true if we found the state, false otherwise
    */
-  static bool get_gt_state(double timestep, Eigen::Matrix<double, 17, 1> &imustate,
+  static bool get_gt_state(double timestep, Eigen::Matrix<double, 24, 1> &imustate,
                            std::map<double, Eigen::Matrix<double, 17, 1>> &gt_states) {
 
     // Check that we even have groundtruth loaded

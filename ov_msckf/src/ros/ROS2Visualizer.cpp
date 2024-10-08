@@ -590,6 +590,8 @@ void ROS2Visualizer::callback_stereo(const sensor_msgs::msg::Image::ConstSharedP
 
 void ROS2Visualizer::publish_state() {
 
+  // MAGICC TODO: Need to publish delta states
+
   // Get the current state
   std::shared_ptr<State> state = _app->get_state();
 
@@ -706,7 +708,8 @@ void ROS2Visualizer::publish_features() {
 void ROS2Visualizer::publish_groundtruth() {
 
   // Our groundtruth state
-  Eigen::Matrix<double, 17, 1> state_gt;
+  // MAGICC TODO: Need to publish delta states
+  Eigen::Matrix<double, 24, 1> state_gt;
 
   // We want to publish in the IMU clock frame
   // The timestamp in the state will be the last camera time
@@ -727,7 +730,7 @@ void ROS2Visualizer::publish_groundtruth() {
   }
 
   // Get the GT and system state state
-  Eigen::Matrix<double, 16, 1> state_ekf = _app->get_state()->_imu->value();
+  Eigen::Matrix<double, 23, 1> state_ekf = _app->get_state()->_imu->value();
 
   // Create pose of IMU
   geometry_msgs::msg::PoseStamped poseIinM;
