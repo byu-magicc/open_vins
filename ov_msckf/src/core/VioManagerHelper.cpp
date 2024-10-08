@@ -37,11 +37,11 @@ using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
-void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
+void VioManager::initialize_with_gt(Eigen::Matrix<double, 24, 1> imustate) {
 
   // Initialize the system
-  state->_imu->set_value(imustate.block(1, 0, 16, 1));
-  state->_imu->set_fej(imustate.block(1, 0, 16, 1));
+  state->_imu->set_value(imustate.block(1, 0, 23, 1));
+  state->_imu->set_fej(imustate.block(1, 0, 23, 1));
 
   // Fix the global yaw and position gauge freedoms
   // TODO: Why does this break out simulation consistency metrics?
@@ -50,6 +50,8 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   Cov.block(0, 0, 3, 3) = std::pow(0.017, 2) * Eigen::Matrix3d::Identity(); // q
   Cov.block(3, 3, 3, 3) = std::pow(0.05, 2) * Eigen::Matrix3d::Identity();  // p
   Cov.block(6, 6, 3, 3) = std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v (static)
+  Cov.block(15, 15, 3, 3) = std::pow(0.017, 2) * Eigen::Matrix3d::Identity(); // delta_q
+  Cov.block(18, 18, 3, 3) = std::pow(0.05, 2) * Eigen::Matrix3d::Identity();  // delta_p
   StateHelper::set_initial_covariance(state, Cov, order);
 
   // Set the state time

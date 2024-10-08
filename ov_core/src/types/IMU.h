@@ -78,7 +78,6 @@ public:
    *
    * @param dx 15 DOF vector encoding update using the following order (q, p, v, bg, ba)
    */
-  // TODO: Check usages of this function
   void update(const Eigen::VectorXd &dx) override {
 
     assert(dx.rows() == _size);

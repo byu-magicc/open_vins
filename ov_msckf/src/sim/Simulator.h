@@ -83,7 +83,7 @@ public:
    * @param imustate State in the MSCKF ordering: [time(sec),q_GtoI,p_IinG,v_IinG,b_gyro,b_accel]
    * @return True if we have a state
    */
-  bool get_state(double desired_time, Eigen::Matrix<double, 17, 1> &imustate);
+  bool get_state(double desired_time, Eigen::Matrix<double, 24, 1> &imustate);
 
   /**
    * @brief Gets the next inertial reading if we have one.
