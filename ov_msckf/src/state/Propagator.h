@@ -264,7 +264,8 @@ protected:
    * @param new_p The resulting new position after integration
    */
   void predict_mean_discrete(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
-                             Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p);
+                             Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p, Eigen::Vector4d &new_delta_q,
+                             Eigen::Vector3d &new_delta_p);
 
   /**
    * @brief RK4 imu mean propagation.
@@ -294,7 +295,7 @@ protected:
    */
   void predict_mean_rk4(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat1, const Eigen::Vector3d &a_hat1,
                         const Eigen::Vector3d &w_hat2, const Eigen::Vector3d &a_hat2, Eigen::Vector4d &new_q, Eigen::Vector3d &new_v,
-                        Eigen::Vector3d &new_p);
+                        Eigen::Vector3d &new_p, Eigen::Vector4d &new_delta_q, Eigen::Vector3d &new_delta_p);
 
   /**
    * @brief Analytically compute the integration components based on ACI^2
@@ -381,7 +382,8 @@ protected:
    * @param Xi_sum All the needed integration components, including R_k, Xi_1, Xi_2, Jr, Xi_3, Xi_4
    */
   void predict_mean_analytic(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
-                             Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p, Eigen::Matrix<double, 3, 18> &Xi_sum);
+                             Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p,
+                             Eigen::Vector4d &new_delta_q, Eigen::Vector3d &new_delta_p, Eigen::Matrix<double, 3, 18> &Xi_sum);
 
   /**
    * @brief Analytically compute state transition matrix F and noise Jacobian G based on ACI^2
@@ -405,8 +407,9 @@ protected:
    */
   void compute_F_and_G_analytic(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
                                 const Eigen::Vector3d &w_uncorrected, const Eigen::Vector3d &a_uncorrected, const Eigen::Vector4d &new_q,
-                                const Eigen::Vector3d &new_v, const Eigen::Vector3d &new_p, const Eigen::Matrix<double, 3, 18> &Xi_sum,
-                                Eigen::MatrixXd &F, Eigen::MatrixXd &G);
+                                const Eigen::Vector3d &new_v, const Eigen::Vector3d &new_p, const Eigen::Vector4d &new_delta_q,
+                                const Eigen::Vector3d &new_delta_p, const Eigen::Matrix<double, 3, 18> &Xi_sum, Eigen::MatrixXd &F,
+                                Eigen::MatrixXd &G);
 
   /**
    * @brief compute state transition matrix F and noise Jacobian G
@@ -429,7 +432,8 @@ protected:
    */
   void compute_F_and_G_discrete(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
                                 const Eigen::Vector3d &w_uncorrected, const Eigen::Vector3d &a_uncorrected, const Eigen::Vector4d &new_q,
-                                const Eigen::Vector3d &new_v, const Eigen::Vector3d &new_p, Eigen::MatrixXd &F, Eigen::MatrixXd &G);
+                                const Eigen::Vector3d &new_v, const Eigen::Vector3d &new_p, const Eigen::Vector4d &new_delta_q,
+                                const Eigen::Vector3d &new_delta_p, Eigen::MatrixXd &F, Eigen::MatrixXd &G);
 
   /// Container for the noise values
   NoiseManager _noises;
