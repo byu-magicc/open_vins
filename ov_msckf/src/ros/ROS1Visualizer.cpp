@@ -47,6 +47,8 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
   // Setup pose and path publisher
   pub_poseimu = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>("poseimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_poseimu.getTopic().c_str());
+  pub_poseimudelta = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>("poseimudelta", 2);
+  PRINT_DEBUG("Publishing: %s\n", pub_poseimudelta.getTopic().c_str());
   pub_odomimu = nh->advertise<nav_msgs::Odometry>("odomimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_odomimu.getTopic().c_str());
   pub_pathimu = nh->advertise<nav_msgs::Path>("pathimu", 2);
@@ -644,6 +646,34 @@ void ROS1Visualizer::publish_state() {
   }
   pub_pathimu.publish(arrIMU);
 
+  //=========================================================
+  //=========================================================
+
+  // Create delta pose message
+  geometry_msgs::PoseWithCovarianceStamped poseDelta;
+  poseDelta.header = poseIinM.header;
+  poseDelta.header.seq = poses_seq_imu;
+  poseDelta.header.frame_id = "local";
+  poseDelta.pose.pose.orientation.x = state->_imu->delta_quat()(0);
+  poseDelta.pose.pose.orientation.y = state->_imu->delta_quat()(1);
+  poseDelta.pose.pose.orientation.z = state->_imu->delta_quat()(2);
+  poseDelta.pose.pose.orientation.w = state->_imu->delta_quat()(3);
+  poseDelta.pose.pose.position.x = state->_imu->delta_pos()(0);
+  poseDelta.pose.pose.position.y = state->_imu->delta_pos()(1);
+  poseDelta.pose.pose.position.z = state->_imu->delta_pos()(2);
+
+  // Set the covariances
+  std::vector<std::shared_ptr<Type>> statevars_delta;
+  statevars_delta.push_back(state->_imu->delta_pose()->p());
+  statevars_delta.push_back(state->_imu->delta_pose()->q());
+  Eigen::Matrix<double, 6, 6> covariance_delta = StateHelper::get_marginal_covariance(_app->get_state(), statevars_delta);
+  for (int r = 0; r < 6; r++) {
+    for (int c = 0; c < 6; c++) {
+      poseDelta.pose.covariance[6 * r + c] = covariance_delta(r, c);
+    }
+  }
+  pub_poseimudelta.publish(poseDelta);
+
   // Move them forward in time
   poses_seq_imu++;
 }
@@ -711,7 +741,7 @@ void ROS1Visualizer::publish_features() {
 void ROS1Visualizer::publish_groundtruth() {
 
   // Our groundtruth state
-  Eigen::Matrix<double, 17, 1> state_gt;
+  Eigen::Matrix<double, 24, 1> state_gt;
 
   // We want to publish in the IMU clock frame
   // The timestamp in the state will be the last camera time
@@ -732,7 +762,7 @@ void ROS1Visualizer::publish_groundtruth() {
   }
 
   // Get the GT and system state state
-  Eigen::Matrix<double, 16, 1> state_ekf = _app->get_state()->_imu->value();
+  Eigen::Matrix<double, 23, 1> state_ekf = _app->get_state()->_imu->value();
 
   // Create pose of IMU
   geometry_msgs::PoseStamped poseIinM;
