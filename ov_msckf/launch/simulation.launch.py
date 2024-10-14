@@ -111,18 +111,6 @@ launch_args = [
     ),
 
     DeclareLaunchArgument(
-        name="dosave_pose",
-        default_value="true"
-    ),
-    DeclareLaunchArgument(
-        name="path_est",
-        default_value=""
-    ),
-    DeclareLaunchArgument(
-        name="path_gt",
-        default_value=""
-    ),
-    DeclareLaunchArgument(
         name="dosave_state",
         default_value="true"
     ),
@@ -168,42 +156,6 @@ def launch_setup(context):
                 LogInfo(
                     msg="ERROR: config_path file: '{}' - does not exist. - not starting OpenVINS".format(
                         config_path)
-                    )
-            ]
-
-    # Get path_est filepath
-    path_est = LaunchConfiguration("path_est").perform(context)
-    if not path_est:
-        path_est = os.path.join(
-            get_package_share_directory("ov_eval"),
-            "data",
-            "sim",
-            "traj_estimate.txt"
-        )
-    else:
-        if not os.path.isfile(path_est):
-            return [
-                LogInfo(
-                    msg="ERROR: path_est file: '{}' - does not exist. - not starting OpenVINS simulation".format(
-                        path_est)
-                    )
-            ]
-
-    # Get path_gt filepath
-    path_gt = LaunchConfiguration("path_gt").perform(context)
-    if not path_gt:
-        path_gt = os.path.join(
-            get_package_share_directory("ov_eval"),
-            "data",
-            "sim",
-            "traj_groundtruth.txt"
-        )
-    else:
-        if not os.path.isfile(path_gt):
-            return [
-                LogInfo(
-                    msg="ERROR: path_gt file: '{}' - does not exist. - not starting OpenVINS simulation".format(
-                        path_gt)
                     )
             ]
 
