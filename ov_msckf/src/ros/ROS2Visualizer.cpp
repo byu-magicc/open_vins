@@ -47,6 +47,8 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
   // Setup pose and path publisher
   pub_poseimu = node->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("poseimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_poseimu->get_topic_name());
+  pub_poseimudelta = node->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("poseimudelta", 2);
+  PRINT_DEBUG("Publishing: %s\n", pub_poseimudelta->get_topic_name());
   pub_odomimu = node->create_publisher<nav_msgs::msg::Odometry>("odomimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_odomimu->get_topic_name());
   pub_pathimu = node->create_publisher<nav_msgs::msg::Path>("pathimu", 2);
@@ -590,8 +592,6 @@ void ROS2Visualizer::callback_stereo(const sensor_msgs::msg::Image::ConstSharedP
 
 void ROS2Visualizer::publish_state() {
 
-  // MAGICC TODO: Need to publish delta states
-
   // Get the current state
   std::shared_ptr<State> state = _app->get_state();
 
@@ -643,6 +643,34 @@ void ROS2Visualizer::publish_state() {
     arrIMU.poses.push_back(poses_imu.at(i));
   }
   pub_pathimu->publish(arrIMU);
+
+  //=========================================================
+  //=========================================================
+  
+  // Create delta pose message
+  geometry_msgs::msg::PoseWithCovarianceStamped poseDelta;
+  poseDelta.header = poseIinM.header;
+  poseDelta.pose.pose.orientation.x = state->_imu->delta_quat()(0);
+  poseDelta.pose.pose.orientation.y = state->_imu->delta_quat()(1);
+  poseDelta.pose.pose.orientation.z = state->_imu->delta_quat()(2);
+  poseDelta.pose.pose.orientation.w = state->_imu->delta_quat()(3);
+  poseDelta.pose.pose.position.x = state->_imu->delta_pos()(0);
+  poseDelta.pose.pose.position.y = state->_imu->delta_pos()(1);
+  poseDelta.pose.pose.position.z = state->_imu->delta_pos()(2);
+
+  // Add the uncertainty to the pose
+  std::vector<std::shared_ptr<Type>> statevars_delta;
+  statevars_delta.push_back(state->_imu->delta_pose()->p());
+  statevars_delta.push_back(state->_imu->delta_pose()->q());
+  Eigen::Matrix<double, 6, 6> covariance_delta = StateHelper::get_marginal_covariance(_app->get_state(), statevars_delta);
+  for (int r = 0; r < 6; r++) {
+    for (int c = 0; c < 6; c++) {
+      poseDelta.pose.covariance[6 * r + c] = covariance_delta(r, c);
+    }
+  }
+
+  // Publish the message
+  pub_poseimudelta->publish(poseDelta);
 }
 
 void ROS2Visualizer::publish_images() {
@@ -708,7 +736,6 @@ void ROS2Visualizer::publish_features() {
 void ROS2Visualizer::publish_groundtruth() {
 
   // Our groundtruth state
-  // MAGICC TODO: Need to publish delta states
   Eigen::Matrix<double, 24, 1> state_gt;
 
   // We want to publish in the IMU clock frame
