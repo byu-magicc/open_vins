@@ -165,7 +165,6 @@ void ROSVisualizerHelper::sim_save_total_state_to_file(std::shared_ptr<State> st
 
     // Note that we get the true time in the IMU clock frame
     // NOTE: we record both the estimate and groundtruth with the same "true" timestamp if we are doing simulation
-    // MAGICC TODO: Need to save delta states to file
     Eigen::Matrix<double, 24, 1> state_gt;
     timestamp_inI = state->_timestamp + sim->get_true_parameters().calib_camimu_dt;
     if (sim->get_state(timestamp_inI, state_gt)) {
@@ -179,6 +178,8 @@ void ROSVisualizerHelper::sim_save_total_state_to_file(std::shared_ptr<State> st
       of_state_gt << state_gt(8) << " " << state_gt(9) << " " << state_gt(10) << " ";
       of_state_gt << state_gt(11) << " " << state_gt(12) << " " << state_gt(13) << " ";
       of_state_gt << state_gt(14) << " " << state_gt(15) << " " << state_gt(16) << " ";
+      of_state_gt << state_gt(17) << " " << state_gt(18) << " " << state_gt(19) << " " << state_gt(20) << " ";
+      of_state_gt << state_gt(21) << " " << state_gt(22) << " " << state_gt(23) << " ";
 
       // TIMEOFF: Get the current true time offset
       of_state_gt.precision(7);
@@ -251,6 +252,9 @@ void ROSVisualizerHelper::sim_save_total_state_to_file(std::shared_ptr<State> st
   of_state_est << state->_imu->vel()(0) << " " << state->_imu->vel()(1) << " " << state->_imu->vel()(2) << " ";
   of_state_est << state->_imu->bias_g()(0) << " " << state->_imu->bias_g()(1) << " " << state->_imu->bias_g()(2) << " ";
   of_state_est << state->_imu->bias_a()(0) << " " << state->_imu->bias_a()(1) << " " << state->_imu->bias_a()(2) << " ";
+  of_state_est << state->_imu->delta_quat()(0) << " " << state->_imu->delta_quat()(1) << " " << state->_imu->delta_quat()(2) << " "
+               << state->_imu->delta_quat()(3) << " ";
+  of_state_est << state->_imu->delta_pos()(0) << " " << state->_imu->delta_pos()(1) << " " << state->_imu->delta_pos()(2) << " ";
 
   // STATE: Write current uncertainty to file
   of_state_std.precision(5);
@@ -266,6 +270,10 @@ void ROSVisualizerHelper::sim_save_total_state_to_file(std::shared_ptr<State> st
   id = state->_imu->bg()->id();
   of_state_std << std::sqrt(cov(id + 0, id + 0)) << " " << std::sqrt(cov(id + 1, id + 1)) << " " << std::sqrt(cov(id + 2, id + 2)) << " ";
   id = state->_imu->ba()->id();
+  of_state_std << std::sqrt(cov(id + 0, id + 0)) << " " << std::sqrt(cov(id + 1, id + 1)) << " " << std::sqrt(cov(id + 2, id + 2)) << " ";
+  id = state->_imu->delta_q()->id();
+  of_state_std << std::sqrt(cov(id + 0, id + 0)) << " " << std::sqrt(cov(id + 1, id + 1)) << " " << std::sqrt(cov(id + 2, id + 2)) << " ";
+  id = state->_imu->delta_p()->id();
   of_state_std << std::sqrt(cov(id + 0, id + 0)) << " " << std::sqrt(cov(id + 1, id + 1)) << " " << std::sqrt(cov(id + 2, id + 2)) << " ";
 
   // TIMEOFF: Get the current estimate time offset
