@@ -1,5 +1,5 @@
 # Base image
-FROM osrf/ros:galactic-desktop
+FROM docker.io/osrf/ros:galactic-desktop
 
 # Update system
 RUN apt-get update && apt-get upgrade -y && rosdep update
