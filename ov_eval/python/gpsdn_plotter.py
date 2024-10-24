@@ -25,13 +25,17 @@ class DataPlotterNode(Node):
         self.truth_data = {}
         for namespace in agent_namespaces:
             self.truth_data[namespace] = []
-        self.estimated_data = {}
+        self.global_estimate_data = {}
         for namespace in agent_namespaces:
-            self.estimated_data[namespace] = []
+            self.global_estimate_data[namespace] = []
+        self.delta_estimate_data = {}
+        for namespace in agent_namespaces:
+            self.delta_estimate_data[namespace] = []
 
         # Create subscribers
         self.truth_subs = {}
-        self.estimated_subs = {}
+        self.global_estimate_subs = {}
+        self.delta_estimate_subs = {}
         for namespace in agent_namespaces:
             truth_topic_name = '/' + namespace + '/posegt'
             self.truth_subs[namespace] = self.create_subscription(
@@ -40,28 +44,41 @@ class DataPlotterNode(Node):
                 lambda msg, n=namespace: self.truth_data[n].append(msg.pose),
                 1000
             )
-            estimated_topic_name = '/' + namespace + '/poseimu'
-            self.estimated_subs[namespace] = self.create_subscription(
+            global_estimate_topic_name = '/' + namespace + '/poseimu'
+            self.global_estimate_subs[namespace] = self.create_subscription(
                 PoseWithCovarianceStamped,
-                estimated_topic_name,
-                lambda msg, n=namespace: self.estimated_data[n].append(msg.pose.pose),
+                global_estimate_topic_name,
+                lambda msg, n=namespace: self.global_estimate_data[n].append(msg.pose.pose),
                 1000
             )
+            delta_estimate_topic_name = '/' + namespace + '/poseimudelta'
+            self.delta_estimate_subs[namespace] = self.create_subscription(
+                PoseWithCovarianceStamped,
+                delta_estimate_topic_name,
+                lambda msg, n=namespace: self.delta_estimate_data[n].append(msg.pose.pose),
+                1000
+            )
+
 
     def plot_data(self):
         # Extract data into usable format
         truth_position = {}
         truth_orientation = {}
-        estimated_position = {}
-        estimated_orientation = {}
+        global_estimate_position = {}
+        global_estimate_orientation = {}
+        delta_estimate_position = {}
+        delta_estimate_orientation = {}
         for key in self.truth_data.keys():
             truth_position[key] = []
             truth_orientation[key] = []
-            estimated_position[key] = []
-            estimated_orientation[key] = []
+            global_estimate_position[key] = []
+            global_estimate_orientation[key] = []
+            delta_estimate_position[key] = []
+            delta_estimate_orientation[key] = []
 
             truth_data = self.truth_data[key]
-            estimated_data = self.estimated_data[key]
+            global_estimate_data = self.global_estimate_data[key]
+            delta_estimate_data = self.delta_estimate_data[key]
             for i in range(len(truth_data)):
                 truth_position[key].append([
                     truth_data[i].position.x,
@@ -74,75 +91,117 @@ class DataPlotterNode(Node):
                     truth_data[i].orientation.z,
                     truth_data[i].orientation.w
                 ])
-                estimated_position[key].append([
-                    estimated_data[i].position.x,
-                    estimated_data[i].position.y,
-                    estimated_data[i].position.z
+                global_estimate_position[key].append([
+                    global_estimate_data[i].position.x,
+                    global_estimate_data[i].position.y,
+                    global_estimate_data[i].position.z
                 ])
-                estimated_orientation[key].append([
-                    estimated_data[i].orientation.x,
-                    estimated_data[i].orientation.y,
-                    estimated_data[i].orientation.z,
-                    estimated_data[i].orientation.w
+                global_estimate_orientation[key].append([
+                    global_estimate_data[i].orientation.x,
+                    global_estimate_data[i].orientation.y,
+                    global_estimate_data[i].orientation.z,
+                    global_estimate_data[i].orientation.w
+                ])
+                delta_estimate_position[key].append([
+                    delta_estimate_data[i].position.x,
+                    delta_estimate_data[i].position.y,
+                    delta_estimate_data[i].position.z
+                ])
+                delta_estimate_orientation[key].append([
+                    delta_estimate_data[i].orientation.x,
+                    delta_estimate_data[i].orientation.y,
+                    delta_estimate_data[i].orientation.z,
+                    delta_estimate_data[i].orientation.w
                 ])
             truth_position[key] = np.array(truth_position[key])
             truth_orientation[key] = np.array(truth_orientation[key])
-            estimated_position[key] = np.array(estimated_position[key])
-            estimated_orientation[key] = np.array(estimated_orientation[key])
+            global_estimate_position[key] = np.array(global_estimate_position[key])
+            global_estimate_orientation[key] = np.array(global_estimate_orientation[key])
+            delta_estimate_position[key] = np.array(delta_estimate_position[key])
+            delta_estimate_orientation[key] = np.array(delta_estimate_orientation[key])
 
         # Get filenames for saving plots and data
         counter = 0
-        while os.path.exists(f'xy_position_{counter}.png') \
-                or os.path.exists(f'position_error_{counter}.png') \
+        while os.path.exists(f'estimates_{counter}.png') \
                 or os.path.exists(f'data_{counter}.npz'):
             counter += 1
-        position_filename = f'xy_position_{counter}.png'
-        error_filename = f'position_error_{counter}.png'
+        estimates_plot_filename = f'estimates_{counter}.png'
         data_filename = f'data_{counter}.npz'
 
-        # Calculate errors between truth and estimate
-        position_error = {}
-        orientation_error = {}
+        # Calculate errors between truth and estimates
+        # MAGICC TODO: Stack keyframes once reset is implemented
+        global_position_error = {}
+        global_orientation_error = {}
+        delta_position_error = {}
+        delta_orientation_error = {}
         for key in self.truth_data.keys():
-            position_error[key] = np.linalg.norm(truth_position[key] - estimated_position[key], axis=1)
-            orientation_error[key] = np.linalg.norm(truth_orientation[key] - estimated_orientation[key], axis=1)
-
-        # Plot position data
-        plt.figure()
-        for key in self.truth_data.keys():
-            plt.plot(truth_position[key][:, 0], truth_position[key][:, 1], color='blue')
-            plt.plot(estimated_position[key][:, 0], estimated_position[key][:, 1], color='red')
-        blue_patch = mpatches.Patch(color='blue', label='Truth')
-        red_patch = mpatches.Patch(color='red', label='Estimated')
-        plt.legend(handles=[blue_patch, red_patch], handlelength=1.5, handleheight=0.1)
-        plt.xlabel('X Position (m)')
-        plt.ylabel('Y Position (m)')
-        plt.title('XY Position of Agents')
-        plt.axis('equal')
-        plt.savefig(position_filename)
-
-        # Plot position error data
-        plt.figure()
-        for key in self.truth_data.keys():
-            plt.plot(position_error[key], label=key)
-        plt.ylabel('Position Error (m)')
-        plt.title('Position Error of Agents')
-        plt.legend()
-        plt.grid()
-        plt.gca().set_ylim(bottom=0)
-        plt.savefig(error_filename)
+            global_position_error[key] = np.linalg.norm(truth_position[key] - global_estimate_position[key], axis=1)
+            global_orientation_error[key] = np.linalg.norm(truth_orientation[key] - global_estimate_orientation[key], axis=1)
+            delta_position_error[key] = np.linalg.norm(truth_position[key] - delta_estimate_position[key], axis=1)
+            delta_orientation_error[key] = np.linalg.norm(truth_orientation[key] - delta_estimate_orientation[key], axis=1)
 
         # Save all data to a .npz file
         data = {}
         for key in self.truth_data.keys():
             data[f'{key}_truth_position'] = truth_position[key]
             data[f'{key}_truth_orientation'] = truth_orientation[key]
-            data[f'{key}_estimated_position'] = estimated_position[key]
-            data[f'{key}_estimated_orientation'] = estimated_orientation[key]
-            data[f'{key}_position_error'] = position_error[key]
-            data[f'{key}_orientation_error'] = orientation_error[key]
-        counter = 0
+            data[f'{key}_global_estimate_position'] = global_estimate_position[key]
+            data[f'{key}_global_estimate_orientation'] = global_estimate_orientation[key]
+            data[f'{key}_global_estimate_position_error'] = global_position_error[key]
+            data[f'{key}_global_estimate_orientation_error'] = global_orientation_error[key]
+            data[f'{key}_delta_estimate_position'] = delta_estimate_position[key]
+            data[f'{key}_delta_estimate_orientation'] = delta_estimate_orientation[key]
+            data[f'{key}_delta_estimate_position_error'] = delta_position_error[key]
+            data[f'{key}_delta_estimate_orientation_error'] = delta_orientation_error[key]
         np.savez(data_filename, **data)
+
+        # Create 2x2 plot for global and keyframe estimates
+        fig, axs = plt.subplots(2, 2, figsize=(16, 12))
+
+        # Global position data
+        for key in self.truth_data.keys():
+            axs[0, 0].plot(truth_position[key][:, 0], truth_position[key][:, 1], color='blue')
+            axs[0, 0].plot(global_estimate_position[key][:, 0], global_estimate_position[key][:, 1], color='red')
+        blue_patch = mpatches.Patch(color='blue', label='Truth')
+        red_patch = mpatches.Patch(color='red', label='Global Estimate')
+        axs[0, 0].set_xlabel('X Position (m)')
+        axs[0, 0].set_ylabel('Y Position (m)')
+        axs[0, 0].set_title('XY Position of Agents (Global Estimate)')
+        axs[0, 0].legend(handles=[blue_patch, red_patch], handlelength=1.5, handleheight=0.1)
+        axs[0, 0].axis('equal')
+
+        # Global position error data
+        for key in self.truth_data.keys():
+            axs[1, 0].plot(global_position_error[key], label=key)
+        axs[1, 0].set_ylabel('Position Error (m)')
+        axs[1, 0].set_title('Position Error of Agents (Global Estimate)')
+        axs[1, 0].legend()
+        axs[1, 0].grid()
+        axs[1, 0].set_ylim(bottom=0)
+
+        # Delta position data
+        for key in self.truth_data.keys():
+            axs[0, 1].plot(truth_position[key][:, 0], truth_position[key][:, 1], color='blue')
+            axs[0, 1].plot(delta_estimate_position[key][:, 0], delta_estimate_position[key][:, 1], color='green')
+        blue_patch = mpatches.Patch(color='blue', label='Truth')
+        green_patch = mpatches.Patch(color='green', label='Delta Estimate')
+        axs[0, 1].set_xlabel('X Position (m)')
+        axs[0, 1].set_ylabel('Y Position (m)')
+        axs[0, 1].set_title('XY Position of Agents (Delta Estimate)')
+        axs[0, 1].legend(handles=[blue_patch, green_patch], handlelength=1.5, handleheight=0.1)
+        axs[0, 1].axis('equal')
+
+        # Delta position error data
+        for key in self.truth_data.keys():
+            axs[1, 1].plot(delta_position_error[key], label=key)
+        axs[1, 1].set_ylabel('Position Error (m)')
+        axs[1, 1].set_title('Position Error of Agents (Delta Estimate)')
+        axs[1, 1].legend()
+        axs[1, 1].grid()
+        axs[1, 1].set_ylim(bottom=0)
+
+        plt.tight_layout()
+        plt.savefig(estimates_plot_filename)
 
         self.get_logger().info('Plots generated and data saved successfully!')
 
