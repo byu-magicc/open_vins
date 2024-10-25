@@ -300,7 +300,7 @@ bool Simulator::get_state(double desired_time, Eigen::Matrix<double, 24, 1> &imu
   Eigen::Vector3d true_ba_interp = (1 - lambda) * hist_true_bias_accel.at(id_loc) + lambda * hist_true_bias_accel.at(id_loc + 1);
 
   // Finally lets create the current state
-  // MAGICC TODO: Implement delta state reset here
+  // MAGICC TODO: Implement keyframe state reset here
   imustate(0, 0) = desired_time;
   imustate.block(1, 0, 4, 1) = rot_2_quat(R_GtoI);
   imustate.block(5, 0, 3, 1) = p_IinG;

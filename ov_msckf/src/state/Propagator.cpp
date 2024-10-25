@@ -436,14 +436,14 @@ void Propagator::predict_and_compute(std::shared_ptr<State> state, const ov_core
   }
 
   // Compute the new state mean value
-  Eigen::Vector4d new_q, new_delta_q;
-  Eigen::Vector3d new_v, new_p, new_delta_p;
+  Eigen::Vector4d new_q, new_keyframe_q;
+  Eigen::Vector3d new_v, new_p, new_keyframe_p;
   if (state->_options.integration_method == StateOptions::IntegrationMethod::ANALYTICAL) {
-    predict_mean_analytic(state, dt, w_hat_avg, a_hat_avg, new_q, new_v, new_p, new_delta_q, new_delta_p, Xi_sum);
+    predict_mean_analytic(state, dt, w_hat_avg, a_hat_avg, new_q, new_v, new_p, new_keyframe_q, new_keyframe_p, Xi_sum);
   } else if (state->_options.integration_method == StateOptions::IntegrationMethod::RK4) {
-    predict_mean_rk4(state, dt, w_hat1, a_hat1, w_hat2, a_hat2, new_q, new_v, new_p, new_delta_q, new_delta_p);
+    predict_mean_rk4(state, dt, w_hat1, a_hat1, w_hat2, a_hat2, new_q, new_v, new_p, new_keyframe_q, new_keyframe_p);
   } else {
-    predict_mean_discrete(state, dt, w_hat_avg, a_hat_avg, new_q, new_v, new_p, new_delta_q, new_delta_p);
+    predict_mean_discrete(state, dt, w_hat_avg, a_hat_avg, new_q, new_v, new_p, new_keyframe_q, new_keyframe_p);
   }
 
   // Allocate state transition and continuous-time noise Jacobian
@@ -451,11 +451,11 @@ void Propagator::predict_and_compute(std::shared_ptr<State> state, const ov_core
   Eigen::MatrixXd G = Eigen::MatrixXd::Zero(state->imu_intrinsic_size() + 21, 12);
   if (state->_options.integration_method == StateOptions::IntegrationMethod::RK4 ||
       state->_options.integration_method == StateOptions::IntegrationMethod::ANALYTICAL) {
-    compute_F_and_G_analytic(state, dt, w_hat_avg, a_hat_avg, w_uncorrected, a_uncorrected, new_q, new_v, new_p, new_delta_q, new_delta_p,
-                             Xi_sum, F, G);
+    compute_F_and_G_analytic(state, dt, w_hat_avg, a_hat_avg, w_uncorrected, a_uncorrected, new_q, new_v, new_p, new_keyframe_q,
+                             new_keyframe_p, Xi_sum, F, G);
   } else {
-    compute_F_and_G_discrete(state, dt, w_hat_avg, a_hat_avg, w_uncorrected, a_uncorrected, new_q, new_v, new_p, new_delta_q, new_delta_p,
-                             F, G);
+    compute_F_and_G_discrete(state, dt, w_hat_avg, a_hat_avg, w_uncorrected, a_uncorrected, new_q, new_v, new_p, new_keyframe_q,
+                             new_keyframe_p, F, G);
   }
 
   // Construct our discrete noise covariance matrix
@@ -477,15 +477,15 @@ void Propagator::predict_and_compute(std::shared_ptr<State> state, const ov_core
   imu_x.block(0, 0, 4, 1) = new_q;
   imu_x.block(4, 0, 3, 1) = new_p;
   imu_x.block(7, 0, 3, 1) = new_v;
-  imu_x.block(16, 0, 4, 1) = new_delta_q;
-  imu_x.block(20, 0, 3, 1) = new_delta_p;
+  imu_x.block(16, 0, 4, 1) = new_keyframe_q;
+  imu_x.block(20, 0, 3, 1) = new_keyframe_p;
   state->_imu->set_value(imu_x);
   state->_imu->set_fej(imu_x);
 }
 
 void Propagator::predict_mean_discrete(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
-                                      Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p, Eigen::Vector4d &new_delta_q,
-                                      Eigen::Vector3d &new_delta_p) {
+                                      Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p,
+                                      Eigen::Vector4d &new_keyframe_q, Eigen::Vector3d &new_keyframe_p) {
   // MAGICC TODO: Replace with actual rotation once keyframe reset has been implemented
   Eigen::Matrix3d R_GtoK = Eigen::Matrix3d::Identity();
 
@@ -493,7 +493,7 @@ void Propagator::predict_mean_discrete(std::shared_ptr<State> state, double dt, 
   double w_norm = w_hat.norm();
   Eigen::Matrix4d I_4x4 = Eigen::Matrix4d::Identity();
   Eigen::Matrix3d R_Gtoi = state->_imu->Rot();
-  Eigen::Matrix3d R_Ktoi = state->_imu->delta_Rot();
+  Eigen::Matrix3d R_Ktoi = state->_imu->keyframe_Rot();
 
   // Orientation: Equation (101) and (103) and of Trawny indirect TR
   Eigen::Matrix<double, 4, 4> bigO;
@@ -511,18 +511,18 @@ void Propagator::predict_mean_discrete(std::shared_ptr<State> state, double dt, 
   // Position: just velocity times dt, with the acceleration integrated twice
   new_p = state->_imu->pos() + state->_imu->vel() * dt + 0.5 * R_Gtoi.transpose() * a_hat * dt * dt - 0.5 * _gravity * dt * dt;
 
-  // Delta orientation: Same as orientation, but with keyframe orientation rather than global
-  new_delta_q = quatnorm(bigO * state->_imu->delta_quat());
+  // Keyframe orientation: Same as orientation, but with keyframe orientation rather than global
+  new_keyframe_q = quatnorm(bigO * state->_imu->keyframe_quat());
 
-  // Delta position: Same as global position, but rotation and gavity are rotated into keyframe first
-  new_delta_p = state->_imu->delta_pos() + R_GtoK * state->_imu->vel() * dt + 0.5 * R_Ktoi.transpose() * a_hat * dt * dt - 0.5 * R_GtoK *
-    _gravity * dt * dt;
+  // Keyframe position: Same as global position, but rotation and gavity are rotated into keyframe first
+  new_keyframe_p = state->_imu->keyframe_pos() + R_GtoK * state->_imu->vel() * dt + 0.5 * R_Ktoi.transpose() * a_hat * dt * dt -
+    0.5 * R_GtoK * _gravity * dt * dt;
 }
 
 void Propagator::predict_mean_rk4(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat1, const Eigen::Vector3d &a_hat1,
                                   const Eigen::Vector3d &w_hat2, const Eigen::Vector3d &a_hat2, Eigen::Vector4d &new_q,
-                                  Eigen::Vector3d &new_v, Eigen::Vector3d &new_p, Eigen::Vector4d &new_delta_q,
-                                  Eigen::Vector3d &new_delta_p) {
+                                  Eigen::Vector3d &new_v, Eigen::Vector3d &new_p, Eigen::Vector4d &new_keyframe_q,
+                                  Eigen::Vector3d &new_keyframe_p) {
 
   // Pre-compute things
   Eigen::Vector3d w_hat = w_hat1;
@@ -599,9 +599,9 @@ void Propagator::predict_mean_rk4(std::shared_ptr<State> state, double dt, const
   new_q = quat_multiply(dq, q_0);
   new_p = p_0 + (1.0 / 6.0) * k1_p + (1.0 / 3.0) * k2_p + (1.0 / 3.0) * k3_p + (1.0 / 6.0) * k4_p;
   new_v = v_0 + (1.0 / 6.0) * k1_v + (1.0 / 3.0) * k2_v + (1.0 / 3.0) * k3_v + (1.0 / 6.0) * k4_v;
-  // MAGICC TODO: add the delta_q and delta_p propagation equations here
-  new_delta_q.setZero();
-  new_delta_p.setZero();
+  // MAGICC TODO: add the keyframe_q and keyframe_p propagation equations here
+  new_keyframe_q.setZero();
+  new_keyframe_p.setZero();
 }
 
 void Propagator::compute_Xi_sum(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
@@ -635,7 +635,7 @@ void Propagator::compute_Xi_sum(std::shared_ptr<State> state, double dt, const E
   Jr_ktok1 = ov_core::Jr_so3(-w_hat * dt);
 
   // Now begin the integration of each component
-  // Based on the delta theta, let's decide which integration will be used
+  // Based on the keyframe theta, let's decide which integration will be used
   bool small_w = (w_norm < 1.0 / 180 * M_PI / 2);
   if (!small_w) {
 
@@ -685,7 +685,8 @@ void Propagator::compute_Xi_sum(std::shared_ptr<State> state, double dt, const E
 
 void Propagator::predict_mean_analytic(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
                                        Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p,
-                                       Eigen::Vector4d &new_delta_q, Eigen::Vector3d &new_delta_p, Eigen::Matrix<double, 3, 18> &Xi_sum) {
+                                       Eigen::Vector4d &new_keyframe_q, Eigen::Vector3d &new_keyframe_p,
+                                       Eigen::Matrix<double, 3, 18> &Xi_sum) {
 
   // Pre-compute things
   Eigen::Matrix3d R_Gtok = state->_imu->Rot();
@@ -697,16 +698,16 @@ void Propagator::predict_mean_analytic(std::shared_ptr<State> state, double dt, 
   new_q = ov_core::quat_multiply(q_ktok1, state->_imu->quat());
   new_v = state->_imu->vel() + R_Gtok.transpose() * Xi_1 * a_hat - _gravity * dt;
   new_p = state->_imu->pos() + state->_imu->vel() * dt + R_Gtok.transpose() * Xi_2 * a_hat - 0.5 * _gravity * dt * dt;
-  // MAGICC TODO: add the delta_q and delta_p propagation equations here
-  new_delta_q.setZero();
-  new_delta_p.setZero();
+  // MAGICC TODO: add the keyframe_q and keyframe_p propagation equations here
+  new_keyframe_q.setZero();
+  new_keyframe_p.setZero();
 }
 
 void Propagator::compute_F_and_G_analytic(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat,
                                           const Eigen::Vector3d &a_hat, const Eigen::Vector3d &w_uncorrected,
                                           const Eigen::Vector3d &a_uncorrected, const Eigen::Vector4d &new_q, const Eigen::Vector3d &new_v,
-                                          const Eigen::Vector3d &new_p, const Eigen::Vector4d &new_delta_q,
-                                          const Eigen::Vector3d &new_delta_p, const Eigen::Matrix<double, 3, 18> &Xi_sum,
+                                          const Eigen::Vector3d &new_p, const Eigen::Vector4d &new_keyframe_q,
+                                          const Eigen::Vector3d &new_keyframe_p, const Eigen::Matrix<double, 3, 18> &Xi_sum,
                                           Eigen::MatrixXd &F, Eigen::MatrixXd &G) {
 
   // MAGICC TODO: Implement expanded F and G matrices
@@ -723,10 +724,10 @@ void Propagator::compute_F_and_G_analytic(std::shared_ptr<State> state, double d
   local_size += state->_imu->bg()->size();
   int ba_id = local_size;
   local_size += state->_imu->ba()->size();
-  int delta_q_id = local_size;
-  local_size += state->_imu->delta_q()->size();
-  int delta_p_id = local_size;
-  local_size += state->_imu->delta_p()->size();
+  int keyframe_q_id = local_size;
+  local_size += state->_imu->keyframe_q()->size();
+  int keyframe_p_id = local_size;
+  local_size += state->_imu->keyframe_p()->size();
 
   // If we are doing calibration, we can define their "local" id in the state transition
   int Dw_id = -1;
@@ -859,8 +860,8 @@ void Propagator::compute_F_and_G_analytic(std::shared_ptr<State> state, double d
 void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat,
                                           const Eigen::Vector3d &a_hat, const Eigen::Vector3d &w_uncorrected,
                                           const Eigen::Vector3d &a_uncorrected, const Eigen::Vector4d &new_q, const Eigen::Vector3d &new_v,
-                                          const Eigen::Vector3d &new_p, const Eigen::Vector4d &new_delta_q,
-                                          const Eigen::Vector3d &new_delta_p, Eigen::MatrixXd &F, Eigen::MatrixXd &G) {
+                                          const Eigen::Vector3d &new_p, const Eigen::Vector4d &new_keyframe_q,
+                                          const Eigen::Vector3d &new_keyframe_p, Eigen::MatrixXd &F, Eigen::MatrixXd &G) {
 
   // MAGICC TODO: Replace with actual rotation once keyframe reset has been implemented
   Eigen::Matrix3d R_GtoK = Eigen::Matrix3d::Identity();
@@ -877,10 +878,10 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
   local_size += state->_imu->bg()->size();
   int ba_id = local_size;
   local_size += state->_imu->ba()->size();
-  int delta_th_id = local_size;
-  local_size += state->_imu->delta_q()->size();
-  int delta_p_id = local_size;
-  local_size += state->_imu->delta_p()->size();
+  int keyframe_th_id = local_size;
+  local_size += state->_imu->keyframe_q()->size();
+  int keyframe_p_id = local_size;
+  local_size += state->_imu->keyframe_p()->size();
 
   // If we are doing calibration, we can define their "local" id in the state transition
   int Dw_id = -1;
@@ -911,14 +912,14 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
   Eigen::Matrix3d R_k = state->_imu->Rot();
   Eigen::Vector3d v_k = state->_imu->vel();
   Eigen::Vector3d p_k = state->_imu->pos();
-  Eigen::Matrix3d delta_R_k = state->_imu->delta_Rot();
-  Eigen::Vector3d delta_p_k = state->_imu->delta_pos();
+  Eigen::Matrix3d keyframe_R_k = state->_imu->keyframe_Rot();
+  Eigen::Vector3d keyframe_p_k = state->_imu->keyframe_pos();
   if (state->_options.do_fej) {
     R_k = state->_imu->Rot_fej();
     v_k = state->_imu->vel_fej();
     p_k = state->_imu->pos_fej();
-    delta_R_k = state->_imu->delta_Rot_fej();
-    delta_p_k = state->_imu->delta_pos_fej();
+    keyframe_R_k = state->_imu->keyframe_Rot_fej();
+    keyframe_p_k = state->_imu->keyframe_pos_fej();
   }
   Eigen::Matrix3d dR_ktok1 = quat_2_Rot(new_q) * R_k.transpose();
 
@@ -956,15 +957,16 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
   // for ba
   F.block(ba_id, ba_id, 3, 3).setIdentity();
 
-  // for delta theta
-  F.block(delta_th_id, bg_id, 3, 3) = -dR_ktok1 * Jr_ktok1 * dt * R_wtoI * Dw;
-  F.block(delta_th_id, delta_th_id, 3, 3) = dR_ktok1;
+  // for keyframe theta
+  F.block(keyframe_th_id, bg_id, 3, 3) = -dR_ktok1 * Jr_ktok1 * dt * R_wtoI * Dw;
+  F.block(keyframe_th_id, keyframe_th_id, 3, 3) = dR_ktok1;
 
-  // for delta position
-  F.block(delta_p_id, v_id, 3, 3) = R_GtoK * Eigen::Matrix3d::Identity() * dt;
-  F.block(delta_p_id, ba_id, 3, 3) = -0.5 * R_k.transpose() * dt * dt * R_atoI * Da;
-  F.block(delta_p_id, delta_th_id, 3, 3) = -skew_x(new_delta_p - delta_p_k - R_GtoK * v_k * dt + 0.5 * _gravity * dt * dt) * R_k.transpose();
-  F.block(delta_p_id, delta_p_id, 3, 3).setIdentity();
+  // for keyframe position
+  F.block(keyframe_p_id, v_id, 3, 3) = R_GtoK * Eigen::Matrix3d::Identity() * dt;
+  F.block(keyframe_p_id, ba_id, 3, 3) = -0.5 * R_k.transpose() * dt * dt * R_atoI * Da;
+  F.block(keyframe_p_id, keyframe_th_id, 3, 3) = -skew_x(new_keyframe_p - keyframe_p_k - R_GtoK * v_k * dt + 0.5 * _gravity * dt * dt)
+    * R_k.transpose();
+  F.block(keyframe_p_id, keyframe_p_id, 3, 3).setIdentity();
 
   // begin to add the state transition matrix for the omega intrinsics Dw part
   if (Dw_id != -1) {

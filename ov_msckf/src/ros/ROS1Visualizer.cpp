@@ -47,8 +47,8 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
   // Setup pose and path publisher
   pub_poseimu = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>("poseimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_poseimu.getTopic().c_str());
-  pub_poseimudelta = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>("poseimudelta", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_poseimudelta.getTopic().c_str());
+  pub_poseimukeyframe = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>("poseimukeyframe", 2);
+  PRINT_DEBUG("Publishing: %s\n", pub_poseimukeyframe.getTopic().c_str());
   pub_odomimu = nh->advertise<nav_msgs::Odometry>("odomimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_odomimu.getTopic().c_str());
   pub_pathimu = nh->advertise<nav_msgs::Path>("pathimu", 2);
@@ -121,10 +121,10 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
     // Open the files
     of_state_est.open(filepath_est.c_str());
     of_state_std.open(filepath_std.c_str());
-    of_state_est << "# timestamp(s) q p v bg ba delta_q delta_p cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc"
-                 << std::endl;
-    of_state_std << "# timestamp(s) q p v bg ba delta_q delta_p cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc"
-                 << std::endl;
+    of_state_est << "# timestamp(s) q p v bg ba keyframe_q keyframe_p cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw"
+                 << " da tg wtoI atoI etc" << std::endl;
+    of_state_std << "# timestamp(s) q p v bg ba keyframe_q keyframe_p cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw"
+                 << " da tg wtoI atoI etc" << std::endl;
 
     // Groundtruth if we are simulating
     if (_sim != nullptr) {
@@ -132,8 +132,8 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
         boost::filesystem::remove(filepath_gt);
       boost::filesystem::create_directories(boost::filesystem::path(filepath_gt.c_str()).parent_path());
       of_state_gt.open(filepath_gt.c_str());
-      of_state_gt << "# timestamp(s) q p v bg ba delta_q delta_p cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc"
-                  << std::endl;
+      of_state_gt << "# timestamp(s) q p v bg ba keyframe_q keyframe_p cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw"
+                  << " da tg wtoI atoI etc" << std::endl;
     }
   }
 
@@ -649,30 +649,30 @@ void ROS1Visualizer::publish_state() {
   //=========================================================
   //=========================================================
 
-  // Create delta pose message
-  geometry_msgs::PoseWithCovarianceStamped poseDelta;
-  poseDelta.header = poseIinM.header;
-  poseDelta.header.seq = poses_seq_imu;
-  poseDelta.header.frame_id = "local";
-  poseDelta.pose.pose.orientation.x = state->_imu->delta_quat()(0);
-  poseDelta.pose.pose.orientation.y = state->_imu->delta_quat()(1);
-  poseDelta.pose.pose.orientation.z = state->_imu->delta_quat()(2);
-  poseDelta.pose.pose.orientation.w = state->_imu->delta_quat()(3);
-  poseDelta.pose.pose.position.x = state->_imu->delta_pos()(0);
-  poseDelta.pose.pose.position.y = state->_imu->delta_pos()(1);
-  poseDelta.pose.pose.position.z = state->_imu->delta_pos()(2);
+  // Create keyframe pose message
+  geometry_msgs::PoseWithCovarianceStamped poseKeyframe;
+  poseKeyframe.header = poseIinM.header;
+  poseKeyframe.header.seq = poses_seq_imu;
+  poseKeyframe.header.frame_id = "local";
+  poseKeyframe.pose.pose.orientation.x = state->_imu->keyframe_quat()(0);
+  poseKeyframe.pose.pose.orientation.y = state->_imu->keyframe_quat()(1);
+  poseKeyframe.pose.pose.orientation.z = state->_imu->keyframe_quat()(2);
+  poseKeyframe.pose.pose.orientation.w = state->_imu->keyframe_quat()(3);
+  poseKeyframe.pose.pose.position.x = state->_imu->keyframe_pos()(0);
+  poseKeyframe.pose.pose.position.y = state->_imu->keyframe_pos()(1);
+  poseKeyframe.pose.pose.position.z = state->_imu->keyframe_pos()(2);
 
   // Set the covariances
-  std::vector<std::shared_ptr<Type>> statevars_delta;
-  statevars_delta.push_back(state->_imu->delta_pose()->p());
-  statevars_delta.push_back(state->_imu->delta_pose()->q());
-  Eigen::Matrix<double, 6, 6> covariance_delta = StateHelper::get_marginal_covariance(_app->get_state(), statevars_delta);
+  std::vector<std::shared_ptr<Type>> statevars_keyframe;
+  statevars_keyframe.push_back(state->_imu->keyframe_pose()->p());
+  statevars_keyframe.push_back(state->_imu->keyframe_pose()->q());
+  Eigen::Matrix<double, 6, 6> covariance_keyframe = StateHelper::get_marginal_covariance(_app->get_state(), statevars_keyframe);
   for (int r = 0; r < 6; r++) {
     for (int c = 0; c < 6; c++) {
-      poseDelta.pose.covariance[6 * r + c] = covariance_delta(r, c);
+      poseKeyframe.pose.covariance[6 * r + c] = covariance_keyframe(r, c);
     }
   }
-  pub_poseimudelta.publish(poseDelta);
+  pub_poseimukeyframe.publish(poseKeyframe);
 
   // Move them forward in time
   poses_seq_imu++;

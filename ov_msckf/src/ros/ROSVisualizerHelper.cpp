@@ -252,9 +252,9 @@ void ROSVisualizerHelper::sim_save_total_state_to_file(std::shared_ptr<State> st
   of_state_est << state->_imu->vel()(0) << " " << state->_imu->vel()(1) << " " << state->_imu->vel()(2) << " ";
   of_state_est << state->_imu->bias_g()(0) << " " << state->_imu->bias_g()(1) << " " << state->_imu->bias_g()(2) << " ";
   of_state_est << state->_imu->bias_a()(0) << " " << state->_imu->bias_a()(1) << " " << state->_imu->bias_a()(2) << " ";
-  of_state_est << state->_imu->delta_quat()(0) << " " << state->_imu->delta_quat()(1) << " " << state->_imu->delta_quat()(2) << " "
-               << state->_imu->delta_quat()(3) << " ";
-  of_state_est << state->_imu->delta_pos()(0) << " " << state->_imu->delta_pos()(1) << " " << state->_imu->delta_pos()(2) << " ";
+  of_state_est << state->_imu->keyframe_quat()(0) << " " << state->_imu->keyframe_quat()(1) << " " << state->_imu->keyframe_quat()(2) << " "
+               << state->_imu->keyframe_quat()(3) << " ";
+  of_state_est << state->_imu->keyframe_pos()(0) << " " << state->_imu->keyframe_pos()(1) << " " << state->_imu->keyframe_pos()(2) << " ";
 
   // STATE: Write current uncertainty to file
   of_state_std.precision(5);
@@ -271,9 +271,9 @@ void ROSVisualizerHelper::sim_save_total_state_to_file(std::shared_ptr<State> st
   of_state_std << std::sqrt(cov(id + 0, id + 0)) << " " << std::sqrt(cov(id + 1, id + 1)) << " " << std::sqrt(cov(id + 2, id + 2)) << " ";
   id = state->_imu->ba()->id();
   of_state_std << std::sqrt(cov(id + 0, id + 0)) << " " << std::sqrt(cov(id + 1, id + 1)) << " " << std::sqrt(cov(id + 2, id + 2)) << " ";
-  id = state->_imu->delta_q()->id();
+  id = state->_imu->keyframe_q()->id();
   of_state_std << std::sqrt(cov(id + 0, id + 0)) << " " << std::sqrt(cov(id + 1, id + 1)) << " " << std::sqrt(cov(id + 2, id + 2)) << " ";
-  id = state->_imu->delta_p()->id();
+  id = state->_imu->keyframe_p()->id();
   of_state_std << std::sqrt(cov(id + 0, id + 0)) << " " << std::sqrt(cov(id + 1, id + 1)) << " " << std::sqrt(cov(id + 2, id + 2)) << " ";
 
   // TIMEOFF: Get the current estimate time offset

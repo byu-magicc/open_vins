@@ -44,7 +44,7 @@ public:
     _v = std::shared_ptr<Vec>(new Vec(3));
     _bg = std::shared_ptr<Vec>(new Vec(3));
     _ba = std::shared_ptr<Vec>(new Vec(3));
-    _delta_pose = std::shared_ptr<PoseJPL>(new PoseJPL());
+    _keyframe_pose = std::shared_ptr<PoseJPL>(new PoseJPL());
 
     // Set our default state value
     Eigen::VectorXd imu0 = Eigen::VectorXd::Zero(23, 1);
@@ -69,7 +69,7 @@ public:
     _v->set_local_id(_pose->id() + ((new_id != -1) ? _pose->size() : 0));
     _bg->set_local_id(_v->id() + ((new_id != -1) ? _v->size() : 0));
     _ba->set_local_id(_bg->id() + ((new_id != -1) ? _bg->size() : 0));
-    _delta_pose->set_local_id(_ba->id() + ((new_id != -1) ? _ba->size() : 0));
+    _keyframe_pose->set_local_id(_ba->id() + ((new_id != -1) ? _ba->size() : 0));
   }
 
   /**
@@ -88,9 +88,9 @@ public:
     dq << .5 * dx.block(0, 0, 3, 1), 1.0;
     dq = ov_core::quatnorm(dq);
 
-    Eigen::Matrix<double, 4, 1> d_delta_q;
-    d_delta_q << .5 * dx.block(15, 0, 3, 1), 1.0;
-    d_delta_q = ov_core::quatnorm(d_delta_q);
+    Eigen::Matrix<double, 4, 1> d_keyframe_q;
+    d_keyframe_q << .5 * dx.block(15, 0, 3, 1), 1.0;
+    d_keyframe_q = ov_core::quatnorm(d_keyframe_q);
 
     newX.block(0, 0, 4, 1) = ov_core::quat_multiply(dq, quat());
     newX.block(4, 0, 3, 1) += dx.block(3, 0, 3, 1);
@@ -99,7 +99,7 @@ public:
     newX.block(10, 0, 3, 1) += dx.block(9, 0, 3, 1);
     newX.block(13, 0, 3, 1) += dx.block(12, 0, 3, 1);
 
-    newX.block(16, 0, 4, 1) = ov_core::quat_multiply(d_delta_q, delta_quat());
+    newX.block(16, 0, 4, 1) = ov_core::quat_multiply(d_keyframe_q, keyframe_quat());
     newX.block(20, 0, 3, 1) += dx.block(18, 0, 3, 1);
 
     set_value(newX);
@@ -135,10 +135,10 @@ public:
       return _bg;
     } else if (check == _ba) {
       return _ba;
-    } else if (check == _delta_pose) {
-      return _delta_pose;
-    } else if (check == _delta_pose->check_if_subvariable(check)) {
-      return _delta_pose->check_if_subvariable(check);
+    } else if (check == _keyframe_pose) {
+      return _keyframe_pose;
+    } else if (check == _keyframe_pose->check_if_subvariable(check)) {
+      return _keyframe_pose->check_if_subvariable(check);
     }
     return nullptr;
   }
@@ -179,23 +179,23 @@ public:
   // FEJ accel bias access
   Eigen::Matrix<double, 3, 1> bias_a_fej() const { return _ba->fej(); }
 
-  /// Delta Rotation access
-  Eigen::Matrix<double, 3, 3> delta_Rot() const { return _delta_pose->Rot(); }
+  /// Keyframe Rotation access
+  Eigen::Matrix<double, 3, 3> keyframe_Rot() const { return _keyframe_pose->Rot(); }
 
-  /// Delta FEJ Rotation access
-  Eigen::Matrix<double, 3, 3> delta_Rot_fej() const { return _delta_pose->Rot_fej(); }
+  /// Keyframe FEJ Rotation access
+  Eigen::Matrix<double, 3, 3> keyframe_Rot_fej() const { return _keyframe_pose->Rot_fej(); }
 
-  /// Delta Rotation access quaternion
-  Eigen::Matrix<double, 4, 1> delta_quat() const { return _delta_pose->quat(); }
+  /// Keyframe Rotation access quaternion
+  Eigen::Matrix<double, 4, 1> keyframe_quat() const { return _keyframe_pose->quat(); }
 
-  /// Delta FEJ Rotation access quaternion
-  Eigen::Matrix<double, 4, 1> delta_quat_fej() const { return _delta_pose->quat_fej(); }
+  /// Keyframe FEJ Rotation access quaternion
+  Eigen::Matrix<double, 4, 1> keyframe_quat_fej() const { return _keyframe_pose->quat_fej(); }
 
-  /// Delta Position access
-  Eigen::Matrix<double, 3, 1> delta_pos() const { return _delta_pose->pos(); }
+  /// Keyframe Position access
+  Eigen::Matrix<double, 3, 1> keyframe_pos() const { return _keyframe_pose->pos(); }
 
-  /// Delta FEJ position access
-  Eigen::Matrix<double, 3, 1> delta_pos_fej() const { return _delta_pose->pos_fej(); }
+  /// Keyframe FEJ position access
+  Eigen::Matrix<double, 3, 1> keyframe_pos_fej() const { return _keyframe_pose->pos_fej(); }
 
   /// Pose type access
   std::shared_ptr<PoseJPL> pose() { return _pose; }
@@ -215,14 +215,14 @@ public:
   /// Acceleration bias access
   std::shared_ptr<Vec> ba() { return _ba; }
 
-  /// Delta Pose type access
-  std::shared_ptr<PoseJPL> delta_pose() { return _delta_pose; }
+  /// Keyframe Pose type access
+  std::shared_ptr<PoseJPL> keyframe_pose() { return _keyframe_pose; }
 
-  /// Delta Quaternion type access
-  std::shared_ptr<JPLQuat> delta_q() { return _delta_pose->q(); }
+  /// Keyframe Quaternion type access
+  std::shared_ptr<JPLQuat> keyframe_q() { return _keyframe_pose->q(); }
 
-  /// Delta Position type access
-  std::shared_ptr<Vec> delta_p() { return _delta_pose->p(); }
+  /// Keyframe Position type access
+  std::shared_ptr<Vec> keyframe_p() { return _keyframe_pose->p(); }
 
 protected:
   /// Pose subvariable
@@ -237,8 +237,8 @@ protected:
   /// Acceleration bias subvariable
   std::shared_ptr<Vec> _ba;
 
-  /// Delta pose subvariable, used by partial-update msckf algorithm to construct multi-agent backend
-  std::shared_ptr<PoseJPL> _delta_pose;
+  /// Keyframe pose subvariable, used by partial-update msckf algorithm to construct multi-agent backend
+  std::shared_ptr<PoseJPL> _keyframe_pose;
 
   /**
    * @brief Sets the value of the estimate
@@ -253,7 +253,7 @@ protected:
     _v->set_value(new_value.block(7, 0, 3, 1));
     _bg->set_value(new_value.block(10, 0, 3, 1));
     _ba->set_value(new_value.block(13, 0, 3, 1));
-    _delta_pose->set_value(new_value.block(16, 0, 7, 1));
+    _keyframe_pose->set_value(new_value.block(16, 0, 7, 1));
 
     _value = new_value;
   }
@@ -271,7 +271,7 @@ protected:
     _v->set_fej(new_value.block(7, 0, 3, 1));
     _bg->set_fej(new_value.block(10, 0, 3, 1));
     _ba->set_fej(new_value.block(13, 0, 3, 1));
-    _delta_pose->set_fej(new_value.block(16, 0, 7, 1));
+    _keyframe_pose->set_fej(new_value.block(16, 0, 7, 1));
 
     _fej = new_value;
   }
