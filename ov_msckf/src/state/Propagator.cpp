@@ -486,11 +486,14 @@ void Propagator::predict_and_compute(std::shared_ptr<State> state, const ov_core
 void Propagator::predict_mean_discrete(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
                                       Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p, Eigen::Vector4d &new_delta_q,
                                       Eigen::Vector3d &new_delta_p) {
+  // MAGICC TODO: Replace with actual rotation once keyframe reset has been implemented
+  Eigen::Matrix3d R_GtoK = Eigen::Matrix3d::Identity();
 
   // Pre-compute things
   double w_norm = w_hat.norm();
   Eigen::Matrix4d I_4x4 = Eigen::Matrix4d::Identity();
   Eigen::Matrix3d R_Gtoi = state->_imu->Rot();
+  Eigen::Matrix3d R_Ktoi = state->_imu->delta_Rot();
 
   // Orientation: Equation (101) and (103) and of Trawny indirect TR
   Eigen::Matrix<double, 4, 4> bigO;
@@ -508,9 +511,12 @@ void Propagator::predict_mean_discrete(std::shared_ptr<State> state, double dt, 
   // Position: just velocity times dt, with the acceleration integrated twice
   new_p = state->_imu->pos() + state->_imu->vel() * dt + 0.5 * R_Gtoi.transpose() * a_hat * dt * dt - 0.5 * _gravity * dt * dt;
 
-  // MAGICC TODO: add the delta_q and delta_p propagation equations here
-  new_delta_q.setZero();
-  new_delta_p.setZero();
+  // Delta orientation: Same as orientation, but with keyframe orientation rather than global
+  new_delta_q = quatnorm(bigO * state->_imu->delta_quat());
+
+  // Delta position: Same as global position, but rotation and gavity are rotated into keyframe first
+  new_delta_p = state->_imu->delta_pos() + R_GtoK * state->_imu->vel() * dt + 0.5 * R_Ktoi.transpose() * a_hat * dt * dt - 0.5 * R_GtoK *
+    _gravity * dt * dt;
 }
 
 void Propagator::predict_mean_rk4(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat1, const Eigen::Vector3d &a_hat1,
@@ -856,7 +862,8 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
                                           const Eigen::Vector3d &new_p, const Eigen::Vector4d &new_delta_q,
                                           const Eigen::Vector3d &new_delta_p, Eigen::MatrixXd &F, Eigen::MatrixXd &G) {
 
-  // MAGICC TODO: Implement expanded F and G matrices
+  // MAGICC TODO: Replace with actual rotation once keyframe reset has been implemented
+  Eigen::Matrix3d R_GtoK = Eigen::Matrix3d::Identity();
 
   // Get the locations of each entry of the imu state
   int local_size = 0;
@@ -870,7 +877,7 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
   local_size += state->_imu->bg()->size();
   int ba_id = local_size;
   local_size += state->_imu->ba()->size();
-  int delta_q_id = local_size;
+  int delta_th_id = local_size;
   local_size += state->_imu->delta_q()->size();
   int delta_p_id = local_size;
   local_size += state->_imu->delta_p()->size();
@@ -904,10 +911,14 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
   Eigen::Matrix3d R_k = state->_imu->Rot();
   Eigen::Vector3d v_k = state->_imu->vel();
   Eigen::Vector3d p_k = state->_imu->pos();
+  Eigen::Matrix3d delta_R_k = state->_imu->delta_Rot();
+  Eigen::Vector3d delta_p_k = state->_imu->delta_pos();
   if (state->_options.do_fej) {
     R_k = state->_imu->Rot_fej();
     v_k = state->_imu->vel_fej();
     p_k = state->_imu->pos_fej();
+    delta_R_k = state->_imu->delta_Rot_fej();
+    delta_p_k = state->_imu->delta_pos_fej();
   }
   Eigen::Matrix3d dR_ktok1 = quat_2_Rot(new_q) * R_k.transpose();
 
@@ -944,6 +955,16 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
 
   // for ba
   F.block(ba_id, ba_id, 3, 3).setIdentity();
+
+  // for delta theta
+  F.block(delta_th_id, bg_id, 3, 3) = -dR_ktok1 * Jr_ktok1 * dt * R_wtoI * Dw;
+  F.block(delta_th_id, delta_th_id, 3, 3) = dR_ktok1;
+
+  // for delta position
+  F.block(delta_p_id, v_id, 3, 3) = R_GtoK * Eigen::Matrix3d::Identity() * dt;
+  F.block(delta_p_id, ba_id, 3, 3) = -0.5 * R_k.transpose() * dt * dt * R_atoI * Da;
+  F.block(delta_p_id, delta_th_id, 3, 3) = -skew_x(new_delta_p - delta_p_k - R_GtoK * v_k * dt + 0.5 * _gravity * dt * dt) * R_k.transpose();
+  F.block(delta_p_id, delta_p_id, 3, 3).setIdentity();
 
   // begin to add the state transition matrix for the omega intrinsics Dw part
   if (Dw_id != -1) {
