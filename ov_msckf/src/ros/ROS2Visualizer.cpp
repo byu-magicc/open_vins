@@ -47,8 +47,10 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
   // Setup pose and path publisher
   pub_poseimu = node->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("poseimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_poseimu->get_topic_name());
-  pub_poseimukeyframe = node->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("poseimukeyframe", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_poseimukeyframe->get_topic_name());
+  pub_poseimu_keyframe = node->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("poseimu_keyframe", 2);
+  PRINT_DEBUG("Publishing: %s\n", pub_poseimu_keyframe->get_topic_name());
+  pub_keyframe = node->create_publisher<geometry_msgs::msg::PoseStamped>("keyframe", 2);
+  PRINT_DEBUG("Publishing: %s\n", pub_keyframe->get_topic_name());
   pub_odomimu = node->create_publisher<nav_msgs::msg::Odometry>("odomimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_odomimu->get_topic_name());
   pub_pathimu = node->create_publisher<nav_msgs::msg::Path>("pathimu", 2);
@@ -646,17 +648,17 @@ void ROS2Visualizer::publish_state() {
 
   //=========================================================
   //=========================================================
-  
+
   // Create keyframe pose message
-  geometry_msgs::msg::PoseWithCovarianceStamped poseKeyframe;
-  poseKeyframe.header = poseIinM.header;
-  poseKeyframe.pose.pose.orientation.x = state->_imu->keyframe_quat()(0);
-  poseKeyframe.pose.pose.orientation.y = state->_imu->keyframe_quat()(1);
-  poseKeyframe.pose.pose.orientation.z = state->_imu->keyframe_quat()(2);
-  poseKeyframe.pose.pose.orientation.w = state->_imu->keyframe_quat()(3);
-  poseKeyframe.pose.pose.position.x = state->_imu->keyframe_pos()(0);
-  poseKeyframe.pose.pose.position.y = state->_imu->keyframe_pos()(1);
-  poseKeyframe.pose.pose.position.z = state->_imu->keyframe_pos()(2);
+  geometry_msgs::msg::PoseWithCovarianceStamped poseImuKeyframe;
+  poseImuKeyframe.header = poseIinM.header;
+  poseImuKeyframe.pose.pose.orientation.x = state->_imu->keyframe_quat()(0);
+  poseImuKeyframe.pose.pose.orientation.y = state->_imu->keyframe_quat()(1);
+  poseImuKeyframe.pose.pose.orientation.z = state->_imu->keyframe_quat()(2);
+  poseImuKeyframe.pose.pose.orientation.w = state->_imu->keyframe_quat()(3);
+  poseImuKeyframe.pose.pose.position.x = state->_imu->keyframe_pos()(0);
+  poseImuKeyframe.pose.pose.position.y = state->_imu->keyframe_pos()(1);
+  poseImuKeyframe.pose.pose.position.z = state->_imu->keyframe_pos()(2);
 
   // Add the uncertainty to the pose
   std::vector<std::shared_ptr<Type>> statevars_keyframe;
@@ -665,12 +667,29 @@ void ROS2Visualizer::publish_state() {
   Eigen::Matrix<double, 6, 6> covariance_keyframe = StateHelper::get_marginal_covariance(_app->get_state(), statevars_keyframe);
   for (int r = 0; r < 6; r++) {
     for (int c = 0; c < 6; c++) {
-      poseKeyframe.pose.covariance[6 * r + c] = covariance_keyframe(r, c);
+      poseImuKeyframe.pose.covariance[6 * r + c] = covariance_keyframe(r, c);
     }
   }
 
   // Publish the message
-  pub_poseimukeyframe->publish(poseKeyframe);
+  pub_poseimu_keyframe->publish(poseImuKeyframe);
+
+  //=========================================================
+  //=========================================================
+
+  // Create keyframe message
+  geometry_msgs::msg::PoseStamped keyframe;
+  keyframe.header = poseImuKeyframe.header;
+  keyframe.pose.orientation.x = state->_keyframe->quat()(0);
+  keyframe.pose.orientation.y = state->_keyframe->quat()(1);
+  keyframe.pose.orientation.z = state->_keyframe->quat()(2);
+  keyframe.pose.orientation.w = state->_keyframe->quat()(3);
+  keyframe.pose.position.x = state->_keyframe->pos()(0);
+  keyframe.pose.position.y = state->_keyframe->pos()(1);
+  keyframe.pose.position.z = state->_keyframe->pos()(2);
+
+  // Publish message
+  pub_keyframe->publish(keyframe);
 }
 
 void ROS2Visualizer::publish_images() {

@@ -51,7 +51,7 @@ class DataPlotterNode(Node):
                 lambda msg, n=namespace: self.global_estimate_data[n].append(msg.pose.pose),
                 1000
             )
-            keyframe_estimate_topic_name = '/' + namespace + '/poseimukeyframe'
+            keyframe_estimate_topic_name = '/' + namespace + '/poseimu_keyframe'
             self.keyframe_estimate_subs[namespace] = self.create_subscription(
                 PoseWithCovarianceStamped,
                 keyframe_estimate_topic_name,

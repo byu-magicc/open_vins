@@ -9,7 +9,7 @@ RUN apt-get install -y cmake libgoogle-glog-dev libgflags-dev libatlas-base-dev 
 
 # ROS dependencies
 WORKDIR /open_vins_ws
-COPY . src
+COPY . src/open_vins
 RUN rosdep install --from-path . -y --ignore-src
 
 # Remove apt and rosdep cache
