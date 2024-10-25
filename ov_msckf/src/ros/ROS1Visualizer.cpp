@@ -132,7 +132,7 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
         boost::filesystem::remove(filepath_gt);
       boost::filesystem::create_directories(boost::filesystem::path(filepath_gt.c_str()).parent_path());
       of_state_gt.open(filepath_gt.c_str());
-      of_state_gt << "# timestamp(s) q p v bg ba keyframe_q keyframe_p cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw"
+      of_state_gt << "# timestamp(s) imu_q imu_p imu_v bg ba cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw"
                   << " da tg wtoI atoI etc" << std::endl;
     }
   }
@@ -741,7 +741,7 @@ void ROS1Visualizer::publish_features() {
 void ROS1Visualizer::publish_groundtruth() {
 
   // Our groundtruth state
-  Eigen::Matrix<double, 24, 1> state_gt;
+  Eigen::Matrix<double, 17, 1> state_gt;
 
   // We want to publish in the IMU clock frame
   // The timestamp in the state will be the last camera time

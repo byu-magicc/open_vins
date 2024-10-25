@@ -165,7 +165,7 @@ void ROSVisualizerHelper::sim_save_total_state_to_file(std::shared_ptr<State> st
 
     // Note that we get the true time in the IMU clock frame
     // NOTE: we record both the estimate and groundtruth with the same "true" timestamp if we are doing simulation
-    Eigen::Matrix<double, 24, 1> state_gt;
+    Eigen::Matrix<double, 17, 1> state_gt;
     timestamp_inI = state->_timestamp + sim->get_true_parameters().calib_camimu_dt;
     if (sim->get_state(timestamp_inI, state_gt)) {
       // STATE: write current true state
@@ -178,8 +178,6 @@ void ROSVisualizerHelper::sim_save_total_state_to_file(std::shared_ptr<State> st
       of_state_gt << state_gt(8) << " " << state_gt(9) << " " << state_gt(10) << " ";
       of_state_gt << state_gt(11) << " " << state_gt(12) << " " << state_gt(13) << " ";
       of_state_gt << state_gt(14) << " " << state_gt(15) << " " << state_gt(16) << " ";
-      of_state_gt << state_gt(17) << " " << state_gt(18) << " " << state_gt(19) << " " << state_gt(20) << " ";
-      of_state_gt << state_gt(21) << " " << state_gt(22) << " " << state_gt(23) << " ";
 
       // TIMEOFF: Get the current true time offset
       of_state_gt.precision(7);

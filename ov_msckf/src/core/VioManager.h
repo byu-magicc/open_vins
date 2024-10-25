@@ -93,7 +93,7 @@ public:
    * @brief Given a state, this will initialize our IMU state.
    * @param imustate State in the MSCKF ordering: [time(sec),q_GtoI,p_IinG,v_IinG,b_gyro,b_accel]
    */
-  void initialize_with_gt(Eigen::Matrix<double, 24, 1> imustate);
+  void initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate);
 
   /// If we are initialized or not
   bool initialized() { return is_initialized_vio && timelastupdate != -1; }

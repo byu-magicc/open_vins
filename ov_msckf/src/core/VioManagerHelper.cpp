@@ -37,11 +37,16 @@ using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
-void VioManager::initialize_with_gt(Eigen::Matrix<double, 24, 1> imustate) {
+void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
+
+  // Expand state to include keyframe states (initialized as zero)
+  Eigen::Matrix<double, 24, 1> full_imustate = Eigen::Matrix<double, 24, 1>::Zero();
+  full_imustate.block(0, 0, 17, 1) = imustate;
+  full_imustate(20) = 1.0;
 
   // Initialize the system
-  state->_imu->set_value(imustate.block(1, 0, 23, 1));
-  state->_imu->set_fej(imustate.block(1, 0, 23, 1));
+  state->_imu->set_value(full_imustate.block(1, 0, 23, 1));
+  state->_imu->set_fej(full_imustate.block(1, 0, 23, 1));
 
   // Fix the global yaw and position gauge freedoms
   // TODO: Why does this break out simulation consistency metrics?
@@ -55,8 +60,8 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 24, 1> imustate) {
   StateHelper::set_initial_covariance(state, Cov, order);
 
   // Set the state time
-  state->_timestamp = imustate(0, 0);
-  startup_time = imustate(0, 0);
+  state->_timestamp = full_imustate(0, 0);
+  startup_time = full_imustate(0, 0);
   is_initialized_vio = true;
 
   // Cleanup any features older then the initialization time

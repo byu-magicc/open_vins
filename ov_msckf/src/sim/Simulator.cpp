@@ -264,12 +264,11 @@ void Simulator::perturb_parameters(std::mt19937 gen_state, VioManagerOptions &pa
   }
 }
 
-bool Simulator::get_state(double desired_time, Eigen::Matrix<double, 24, 1> &imustate) {
+bool Simulator::get_state(double desired_time, Eigen::Matrix<double, 17, 1> &imustate) {
 
   // Set to default state
   imustate.setZero();
   imustate(4) = 1;
-  imustate(20) = 1;
 
   // Current state values
   Eigen::Matrix3d R_GtoI;
@@ -300,15 +299,12 @@ bool Simulator::get_state(double desired_time, Eigen::Matrix<double, 24, 1> &imu
   Eigen::Vector3d true_ba_interp = (1 - lambda) * hist_true_bias_accel.at(id_loc) + lambda * hist_true_bias_accel.at(id_loc + 1);
 
   // Finally lets create the current state
-  // MAGICC TODO: Implement keyframe state reset here
   imustate(0, 0) = desired_time;
   imustate.block(1, 0, 4, 1) = rot_2_quat(R_GtoI);
   imustate.block(5, 0, 3, 1) = p_IinG;
   imustate.block(8, 0, 3, 1) = v_IinG;
   imustate.block(11, 0, 3, 1) = true_bg_interp;
   imustate.block(14, 0, 3, 1) = true_ba_interp;
-  imustate.block(17, 0, 4, 1) = rot_2_quat(R_GtoI);
-  imustate.block(21, 0, 3, 1) = p_IinG;
   return true;
 }
 
