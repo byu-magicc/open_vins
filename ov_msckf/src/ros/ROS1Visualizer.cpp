@@ -121,10 +121,10 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
     // Open the files
     of_state_est.open(filepath_est.c_str());
     of_state_std.open(filepath_std.c_str());
-    of_state_est << "# timestamp(s) q p v bg ba keyframe_q keyframe_p cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw"
-                 << " da tg wtoI atoI etc" << std::endl;
-    of_state_std << "# timestamp(s) q p v bg ba keyframe_q keyframe_p cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw"
-                 << " da tg wtoI atoI etc" << std::endl;
+    of_state_est << "# timestamp(s) keyframe_q keyframe_p imu_q imu_p imu_v bg ba keyframe_imu_q keyframe_imu_p cam_imu_dt num_cam cam0_k"
+                 << " cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc" << std::endl;
+    of_state_std << "# timestamp(s) keyframe_q keyframe_p imu_q imu_p imu_v bg ba keyframe_imu_q keyframe_imu_p cam_imu_dt num_cam cam0_k"
+                 << " cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc" << std::endl;
 
     // Groundtruth if we are simulating
     if (_sim != nullptr) {

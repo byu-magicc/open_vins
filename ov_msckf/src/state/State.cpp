@@ -37,6 +37,9 @@ State::State(StateOptions &options) {
   _variables.push_back(_imu);
   current_id += _imu->size();
 
+  // Initialize our keyframe
+  _keyframe = std::make_shared<PoseJPL>();
+
   // Append the imu intrinsics to the state and covariance
   // NOTE: these need to be right "next" to the IMU state in the covariance
   // NOTE: since if calibrating these will evolve / be correlated during propagation

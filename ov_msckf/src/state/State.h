@@ -179,6 +179,9 @@ public:
   /// Rotation from accelerometer to the "IMU" gyroscope frame frame (rpng model)
   std::shared_ptr<ov_type::JPLQuat> _calib_imu_ACCtoIMU;
 
+  /// Rotation and translation from global frame to current keyframe
+  std::shared_ptr<ov_type::PoseJPL> _keyframe;
+
 private:
   // Define that the state helper is a friend class of this class
   // This will allow it to access the below functions which should normally not be called
