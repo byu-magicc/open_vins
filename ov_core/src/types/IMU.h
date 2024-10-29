@@ -117,6 +117,18 @@ public:
    */
   void set_fej(const Eigen::MatrixXd &new_value) override { set_fej_internal(new_value); }
 
+  /**
+   * @brief Reset the keyframe states to zero
+   */
+  void reset_keyframe_states() {
+    Eigen::Matrix<double, 7, 1> new_keyframe = Eigen::Matrix<double, 7, 1>::Zero();
+    new_keyframe(3) = 1.0;
+    keyframe_pose()->set_value(new_keyframe);
+    keyframe_pose()->set_fej(new_keyframe);
+    _value.block(16, 0, 7, 1) = new_keyframe;
+    _fej.block(16, 0, 7, 1) = new_keyframe;
+  }
+
   std::shared_ptr<Type> clone() override {
     auto Clone = std::shared_ptr<Type>(new IMU());
     Clone->set_value(value());

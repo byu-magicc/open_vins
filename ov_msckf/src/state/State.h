@@ -134,6 +134,39 @@ public:
     return sz;
   }
 
+  /**
+  * @brief Reset the keyframe to current keyframe states
+  *
+  * This will set the keyframe definition to the current keyframe plus the change in the keyframe
+  * states, propagating the keyframe forward to the next keyframe. The keyframe states are reset
+  * to zero, as are their variances and covariances with all other states.
+  *
+  * @return The keyframe states at time of reset
+  */
+  Eigen::Matrix<double, 7, 1> reset_keyframe() {
+    std::lock_guard<std::mutex> lock(_mutex_state);
+
+    // Store current keyframe states
+    Eigen::Matrix<double, 7, 1> reset_pose = _keyframe->value();
+
+    // Add previous keyframe states to current keyframe
+    Eigen::Matrix<double, 7, 1> new_keyframe = _keyframe->value();
+    new_keyframe.block(0, 0, 4, 1) = ov_core::quat_multiply(_imu->keyframe_quat(), _keyframe->quat());
+    new_keyframe.block(4, 0, 3, 1) = _imu->keyframe_pos() + _keyframe->pos();
+    _keyframe->set_value(new_keyframe);
+
+    // Reset keyframe states and covariance
+    _imu->reset_keyframe_states();
+    _Cov.block(_imu->keyframe_pose()->id(), 0, 6, _Cov.cols()).setZero();
+    _Cov.block(0, _imu->keyframe_pose()->id(), _Cov.rows(), 6).setZero();
+    _Cov.block(_imu->keyframe_pose()->id(), _imu->keyframe_pose()->id(), 3, 3) =
+      std::pow(0.017, 2) * Eigen::MatrixXd::Identity(3, 3);
+    _Cov.block(_imu->keyframe_pose()->id() + 3, _imu->keyframe_pose()->id() + 3, 3, 3) =
+      std::pow(0.05, 2) * Eigen::MatrixXd::Identity(3, 3);
+
+    return reset_pose;
+  }
+
   /// Mutex for locking access to the state
   std::mutex _mutex_state;
 

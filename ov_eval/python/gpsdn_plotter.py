@@ -22,6 +22,9 @@ class DataPlotterNode(Node):
         agent_namespaces = self.get_parameter('agent_namespaces').get_parameter_value().string_array_value
 
         # Initialize data storage
+        self.time_data = {}
+        for namespace in agent_namespaces:
+            self.time_data[namespace] = []
         self.truth_data = {}
         for namespace in agent_namespaces:
             self.truth_data[namespace] = []
@@ -31,13 +34,24 @@ class DataPlotterNode(Node):
         self.keyframe_estimate_data = {}
         for namespace in agent_namespaces:
             self.keyframe_estimate_data[namespace] = []
+        self.keyframe_data = {}
+        for namespace in agent_namespaces:
+            self.keyframe_data[namespace] = []
 
         # Create subscribers
+        self.time_subs = {}
         self.truth_subs = {}
         self.global_estimate_subs = {}
         self.keyframe_estimate_subs = {}
+        self.keyframe_subs = {}
         for namespace in agent_namespaces:
             truth_topic_name = '/' + namespace + '/posegt'
+            self.time_subs[namespace] = self.create_subscription(
+                PoseStamped,
+                truth_topic_name,
+                lambda msg, n=namespace: self.time_data[n].append(msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9),
+                1000
+            )
             self.truth_subs[namespace] = self.create_subscription(
                 PoseStamped,
                 truth_topic_name,
@@ -58,28 +72,44 @@ class DataPlotterNode(Node):
                 lambda msg, n=namespace: self.keyframe_estimate_data[n].append(msg.pose.pose),
                 1000
             )
+            keyframe_topic_name = '/' + namespace + '/keyframe'
+            self.keyframe_subs[namespace] = self.create_subscription(
+                PoseStamped,
+                keyframe_topic_name,
+                lambda msg, n=namespace: self.keyframe_data[n].append(msg.pose),
+                1000
+            )
 
 
     def plot_data(self):
         # Extract data into usable format
+        time = {}
         truth_position = {}
         truth_orientation = {}
         global_estimate_position = {}
         global_estimate_orientation = {}
         keyframe_estimate_position = {}
         keyframe_estimate_orientation = {}
+        keyframe_position = {}
+        keyframe_orientation = {}
         for key in self.truth_data.keys():
+            time[key] = []
             truth_position[key] = []
             truth_orientation[key] = []
             global_estimate_position[key] = []
             global_estimate_orientation[key] = []
             keyframe_estimate_position[key] = []
             keyframe_estimate_orientation[key] = []
+            keyframe_position[key] = []
+            keyframe_orientation[key] = []
 
+            time_data = self.time_data[key]
             truth_data = self.truth_data[key]
             global_estimate_data = self.global_estimate_data[key]
             keyframe_estimate_data = self.keyframe_estimate_data[key]
+            keyframe_data = self.keyframe_data[key]
             for i in range(len(truth_data)):
+                time[key].append(time_data[i])
                 truth_position[key].append([
                     truth_data[i].position.x,
                     truth_data[i].position.y,
@@ -113,12 +143,26 @@ class DataPlotterNode(Node):
                     keyframe_estimate_data[i].orientation.z,
                     keyframe_estimate_data[i].orientation.w
                 ])
+                keyframe_position[key].append([
+                    keyframe_data[i].position.x,
+                    keyframe_data[i].position.y,
+                    keyframe_data[i].position.z
+                ])
+                keyframe_orientation[key].append([
+                    keyframe_data[i].orientation.x,
+                    keyframe_data[i].orientation.y,
+                    keyframe_data[i].orientation.z,
+                    keyframe_data[i].orientation.w
+                ])
+            time[key] = np.array(time[key]) - time[key][0]
             truth_position[key] = np.array(truth_position[key])
             truth_orientation[key] = np.array(truth_orientation[key])
             global_estimate_position[key] = np.array(global_estimate_position[key])
             global_estimate_orientation[key] = np.array(global_estimate_orientation[key])
             keyframe_estimate_position[key] = np.array(keyframe_estimate_position[key])
             keyframe_estimate_orientation[key] = np.array(keyframe_estimate_orientation[key])
+            keyframe_position[key] = np.array(keyframe_position[key])
+            keyframe_orientation[key] = np.array(keyframe_orientation[key])
 
         # Get filenames for saving plots and data
         counter = 0
@@ -128,32 +172,26 @@ class DataPlotterNode(Node):
         estimates_plot_filename = f'estimates_{counter}.png'
         data_filename = f'data_{counter}.npz'
 
-        # Calculate errors between truth and estimates
-        # MAGICC TODO: Stack keyframes once reset is implemented
-        global_position_error = {}
-        global_orientation_error = {}
-        keyframe_position_error = {}
-        keyframe_orientation_error = {}
-        for key in self.truth_data.keys():
-            global_position_error[key] = np.linalg.norm(truth_position[key] - global_estimate_position[key], axis=1)
-            global_orientation_error[key] = np.linalg.norm(truth_orientation[key] - global_estimate_orientation[key], axis=1)
-            keyframe_position_error[key] = np.linalg.norm(truth_position[key] - keyframe_estimate_position[key], axis=1)
-            keyframe_orientation_error[key] = np.linalg.norm(truth_orientation[key] - keyframe_estimate_orientation[key], axis=1)
-
         # Save all data to a .npz file
         data = {}
         for key in self.truth_data.keys():
+            data[f'{key}_time'] = time[key]
             data[f'{key}_truth_position'] = truth_position[key]
             data[f'{key}_truth_orientation'] = truth_orientation[key]
             data[f'{key}_global_estimate_position'] = global_estimate_position[key]
             data[f'{key}_global_estimate_orientation'] = global_estimate_orientation[key]
-            data[f'{key}_global_estimate_position_error'] = global_position_error[key]
-            data[f'{key}_global_estimate_orientation_error'] = global_orientation_error[key]
             data[f'{key}_keyframe_estimate_position'] = keyframe_estimate_position[key]
             data[f'{key}_keyframe_estimate_orientation'] = keyframe_estimate_orientation[key]
-            data[f'{key}_keyframe_estimate_position_error'] = keyframe_position_error[key]
-            data[f'{key}_keyframe_estimate_orientation_error'] = keyframe_orientation_error[key]
+            data[f'{key}_keyframe_position'] = keyframe_position[key]
+            data[f'{key}_keyframe_orientation'] = keyframe_orientation[key]
         np.savez(data_filename, **data)
+
+        # Calculate errors between truth and estimates
+        global_position_error = {}
+        keyframe_position_error = {}
+        for key in self.truth_data.keys():
+            global_position_error[key] = np.linalg.norm(truth_position[key] - global_estimate_position[key], axis=1)
+            keyframe_position_error[key] = np.linalg.norm(truth_position[key] - keyframe_estimate_position[key] - keyframe_position[key], axis=1)
 
         # Create 2x2 plot for global and keyframe estimates
         fig, axs = plt.subplots(2, 2, figsize=(16, 12))
@@ -172,7 +210,8 @@ class DataPlotterNode(Node):
 
         # Global position error data
         for key in self.truth_data.keys():
-            axs[1, 0].plot(global_position_error[key], label=key)
+            axs[1, 0].plot(time[key], global_position_error[key], label=key)
+        axs[1, 0].set_xlabel('Time (s)')
         axs[1, 0].set_ylabel('Position Error (m)')
         axs[1, 0].set_title('Position Error of Agents (Global Estimate)')
         axs[1, 0].legend()
@@ -181,8 +220,9 @@ class DataPlotterNode(Node):
 
         # Keyframe position data
         for key in self.truth_data.keys():
+            keyframe_chained_positions = keyframe_estimate_position[key] + keyframe_position[key]
             axs[0, 1].plot(truth_position[key][:, 0], truth_position[key][:, 1], color='blue')
-            axs[0, 1].plot(keyframe_estimate_position[key][:, 0], keyframe_estimate_position[key][:, 1], color='green')
+            axs[0, 1].plot(keyframe_chained_positions[:, 0], keyframe_chained_positions[:, 1], color='green')
         blue_patch = mpatches.Patch(color='blue', label='Truth')
         green_patch = mpatches.Patch(color='green', label='Keyframe Estimate')
         axs[0, 1].set_xlabel('X Position (m)')
@@ -193,7 +233,8 @@ class DataPlotterNode(Node):
 
         # Keyframe position error data
         for key in self.truth_data.keys():
-            axs[1, 1].plot(keyframe_position_error[key], label=key)
+            axs[1, 1].plot(time[key], keyframe_position_error[key], label=key)
+        axs[1, 1].set_xlabel('Time (s)')
         axs[1, 1].set_ylabel('Position Error (m)')
         axs[1, 1].set_title('Position Error of Agents (Keyframe Estimate)')
         axs[1, 1].legend()
