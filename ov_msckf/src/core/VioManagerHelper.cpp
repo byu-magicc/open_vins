@@ -47,6 +47,7 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   // Initialize the system
   state->_imu->set_value(full_imustate.block(1, 0, 23, 1));
   state->_imu->set_fej(full_imustate.block(1, 0, 23, 1));
+  state->_keyframe->set_value(imustate.block(1, 0, 7, 1));
 
   // Fix the global yaw and position gauge freedoms
   // TODO: Why does this break out simulation consistency metrics?
