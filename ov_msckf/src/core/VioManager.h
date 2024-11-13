@@ -47,6 +47,7 @@ namespace ov_msckf {
 
 class State;
 class StateHelper;
+class UpdaterGlobal;
 class UpdaterMSCKF;
 class UpdaterSLAM;
 class UpdaterZeroVelocity;
@@ -79,6 +80,12 @@ public:
    * @param message Contains our timestamp, images, and camera ids
    */
   void feed_measurement_camera(const ov_core::CameraData &message) { track_image_and_update(message); }
+
+  /**
+   * @brief Feed function for a GPS measurement
+   * @param message Contains our timestamp, gps, and vehicle transformation
+   */
+  void feed_measurement_gps(const ov_core::GPSData &message);
 
   /**
    * @brief Feed function for a synchronized simulated cameras
@@ -208,6 +215,9 @@ protected:
 
   /// Our zero velocity tracker
   std::shared_ptr<UpdaterZeroVelocity> updaterZUPT;
+
+  /// Our global measurement updater
+  std::shared_ptr<UpdaterGlobal> updaterGlobal;
 
   /// This is the queue of measurement times that have come in since we starting doing initialization
   /// After we initialize, we will want to prop & update to the latest timestamp quickly

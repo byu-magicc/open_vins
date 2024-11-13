@@ -39,6 +39,7 @@
 #include "state/Propagator.h"
 #include "state/State.h"
 #include "state/StateHelper.h"
+#include "update/UpdaterGlobal.h"
 #include "update/UpdaterMSCKF.h"
 #include "update/UpdaterSLAM.h"
 #include "update/UpdaterZeroVelocity.h"
@@ -154,6 +155,7 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   // Make the updater!
   updaterMSCKF = std::make_shared<UpdaterMSCKF>(params.msckf_options, params.featinit_options);
   updaterSLAM = std::make_shared<UpdaterSLAM>(params.slam_options, params.aruco_options, params.featinit_options);
+  updaterGlobal = std::make_shared<UpdaterGlobal>();
 
   // If we are using zero velocity updates, then create the updater
   if (params.try_zupt) {
@@ -186,6 +188,11 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
   if (is_initialized_vio && updaterZUPT != nullptr && (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
     updaterZUPT->feed_imu(message, oldest_time);
   }
+}
+
+void VioManager::feed_measurement_gps(const ov_core::GPSData &message) {
+  // Give the GPD data to the global updater, without applying it to the state
+  updaterGlobal->feed_gps(message);
 }
 
 void VioManager::feed_measurement_simulation(double timestamp, const std::vector<int> &camids,
@@ -599,6 +606,13 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // Finally marginalize the oldest clone if needed
   StateHelper::marginalize_old_clone(state);
   rT7 = boost::posix_time::microsec_clock::local_time();
+
+
+  //===================================================================================
+  // Apply any global measurements
+  //===================================================================================
+
+  updaterGlobal->update(state);
 
   //===================================================================================
   // Debug info, and stats tracking
