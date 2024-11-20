@@ -9,6 +9,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from scipy.spatial.transform import Rotation as R
 
 
 class DataPlotterNode(Node):
@@ -62,14 +63,14 @@ class DataPlotterNode(Node):
             self.global_estimate_subs[namespace] = self.create_subscription(
                 PoseWithCovarianceStamped,
                 global_estimate_topic_name,
-                lambda msg, n=namespace: self.global_estimate_data[n].append(msg.pose.pose),
+                lambda msg, n=namespace: self.global_estimate_data[n].append(msg.pose),
                 1000
             )
             keyframe_estimate_topic_name = '/' + namespace + '/poseimu_keyframe'
             self.keyframe_estimate_subs[namespace] = self.create_subscription(
                 PoseWithCovarianceStamped,
                 keyframe_estimate_topic_name,
-                lambda msg, n=namespace: self.keyframe_estimate_data[n].append(msg.pose.pose),
+                lambda msg, n=namespace: self.keyframe_estimate_data[n].append(msg.pose),
                 1000
             )
             keyframe_topic_name = '/' + namespace + '/keyframe'
@@ -87,9 +88,13 @@ class DataPlotterNode(Node):
         truth_position = {}
         truth_orientation = {}
         global_estimate_position = {}
+        global_estimate_position_std = {}
         global_estimate_orientation = {}
+        global_estimate_orientation_std = {}
         keyframe_estimate_position = {}
+        keyframe_estimate_position_std = {}
         keyframe_estimate_orientation = {}
+        keyframe_estimate_orientation_std = {}
         keyframe_position = {}
         keyframe_orientation = {}
         for key in self.truth_data.keys():
@@ -97,9 +102,13 @@ class DataPlotterNode(Node):
             truth_position[key] = []
             truth_orientation[key] = []
             global_estimate_position[key] = []
+            global_estimate_position_std[key] = []
             global_estimate_orientation[key] = []
+            global_estimate_orientation_std[key] = []
             keyframe_estimate_position[key] = []
+            keyframe_estimate_position_std[key] = []
             keyframe_estimate_orientation[key] = []
+            keyframe_estimate_orientation_std[key] = []
             keyframe_position[key] = []
             keyframe_orientation[key] = []
 
@@ -122,26 +131,46 @@ class DataPlotterNode(Node):
                     truth_data[i].orientation.w
                 ])
                 global_estimate_position[key].append([
-                    global_estimate_data[i].position.x,
-                    global_estimate_data[i].position.y,
-                    global_estimate_data[i].position.z
+                    global_estimate_data[i].pose.position.x,
+                    global_estimate_data[i].pose.position.y,
+                    global_estimate_data[i].pose.position.z
+                ])
+                global_estimate_position_std[key].append([
+                    np.sqrt(global_estimate_data[i].covariance[0]),
+                    np.sqrt(global_estimate_data[i].covariance[7]),
+                    np.sqrt(global_estimate_data[i].covariance[14])
                 ])
                 global_estimate_orientation[key].append([
-                    global_estimate_data[i].orientation.x,
-                    global_estimate_data[i].orientation.y,
-                    global_estimate_data[i].orientation.z,
-                    global_estimate_data[i].orientation.w
+                    global_estimate_data[i].pose.orientation.x,
+                    global_estimate_data[i].pose.orientation.y,
+                    global_estimate_data[i].pose.orientation.z,
+                    global_estimate_data[i].pose.orientation.w
+                ])
+                global_estimate_orientation_std[key].append([
+                    np.sqrt(global_estimate_data[i].covariance[21]),
+                    np.sqrt(global_estimate_data[i].covariance[28]),
+                    np.sqrt(global_estimate_data[i].covariance[35])
                 ])
                 keyframe_estimate_position[key].append([
-                    keyframe_estimate_data[i].position.x,
-                    keyframe_estimate_data[i].position.y,
-                    keyframe_estimate_data[i].position.z
+                    keyframe_estimate_data[i].pose.position.x,
+                    keyframe_estimate_data[i].pose.position.y,
+                    keyframe_estimate_data[i].pose.position.z
+                ])
+                keyframe_estimate_position_std[key].append([
+                    np.sqrt(keyframe_estimate_data[i].covariance[0]),
+                    np.sqrt(keyframe_estimate_data[i].covariance[7]),
+                    np.sqrt(keyframe_estimate_data[i].covariance[14])
                 ])
                 keyframe_estimate_orientation[key].append([
-                    keyframe_estimate_data[i].orientation.x,
-                    keyframe_estimate_data[i].orientation.y,
-                    keyframe_estimate_data[i].orientation.z,
-                    keyframe_estimate_data[i].orientation.w
+                    keyframe_estimate_data[i].pose.orientation.x,
+                    keyframe_estimate_data[i].pose.orientation.y,
+                    keyframe_estimate_data[i].pose.orientation.z,
+                    keyframe_estimate_data[i].pose.orientation.w
+                ])
+                keyframe_estimate_orientation_std[key].append([
+                    np.sqrt(keyframe_estimate_data[i].covariance[21]),
+                    np.sqrt(keyframe_estimate_data[i].covariance[28]),
+                    np.sqrt(keyframe_estimate_data[i].covariance[35])
                 ])
                 keyframe_position[key].append([
                     keyframe_data[i].position.x,
@@ -158,9 +187,13 @@ class DataPlotterNode(Node):
             truth_position[key] = np.array(truth_position[key])
             truth_orientation[key] = np.array(truth_orientation[key])
             global_estimate_position[key] = np.array(global_estimate_position[key])
+            global_estimate_position_std[key] = np.array(global_estimate_position_std[key])
             global_estimate_orientation[key] = np.array(global_estimate_orientation[key])
+            global_estimate_orientation_std[key] = np.array(global_estimate_orientation_std[key])
             keyframe_estimate_position[key] = np.array(keyframe_estimate_position[key])
+            keyframe_estimate_position_std[key] = np.array(keyframe_estimate_position_std[key])
             keyframe_estimate_orientation[key] = np.array(keyframe_estimate_orientation[key])
+            keyframe_estimate_orientation_std[key] = np.array(keyframe_estimate_orientation_std[key])
             keyframe_position[key] = np.array(keyframe_position[key])
             keyframe_orientation[key] = np.array(keyframe_orientation[key])
 
@@ -169,8 +202,10 @@ class DataPlotterNode(Node):
         while os.path.exists(f'estimates_{counter}.png') \
                 or os.path.exists(f'data_{counter}.npz'):
             counter += 1
-        estimates_plot_filename = f'estimates_{counter}.png'
         data_filename = f'data_{counter}.npz'
+        combined_position_and_error_filename = f'combined_position_and_error_{counter}.png'
+        global_error_filename = f'global_error_{counter}.png'
+        keyframe_error_filename = f'keyframe_error_{counter}.png'
 
         # Save all data to a .npz file
         data = {}
@@ -179,12 +214,18 @@ class DataPlotterNode(Node):
             data[f'{key}_truth_position'] = truth_position[key]
             data[f'{key}_truth_orientation'] = truth_orientation[key]
             data[f'{key}_global_estimate_position'] = global_estimate_position[key]
+            data[f'{key}_global_estimate_position_std'] = global_estimate_position_std[key]
             data[f'{key}_global_estimate_orientation'] = global_estimate_orientation[key]
+            data[f'{key}_global_estimate_orientation_std'] = global_estimate_orientation_std[key]
             data[f'{key}_keyframe_estimate_position'] = keyframe_estimate_position[key]
+            data[f'{key}_keyframe_estimate_position_std'] = keyframe_estimate_position_std[key]
             data[f'{key}_keyframe_estimate_orientation'] = keyframe_estimate_orientation[key]
+            data[f'{key}_keyframe_estimate_orientation_std'] = keyframe_estimate_orientation_std[key]
             data[f'{key}_keyframe_position'] = keyframe_position[key]
             data[f'{key}_keyframe_orientation'] = keyframe_orientation[key]
         np.savez(data_filename, **data)
+
+        ### Combined Position and Position Error Plots ###
 
         # Calculate errors between truth and estimates
         global_position_error = {}
@@ -242,7 +283,80 @@ class DataPlotterNode(Node):
         axs[1, 1].set_ylim(bottom=0)
 
         plt.tight_layout()
-        plt.savefig(estimates_plot_filename)
+        plt.savefig(combined_position_and_error_filename)
+
+        ### Global Error Plots ###
+
+        fig, axs = plt.subplots(6, len(truth_position.keys()), figsize=(16, 12))
+
+        if len(truth_position.keys()) == 1:
+            axs = np.expand_dims(axs, axis=1)
+
+        column_idx = 0
+        for key in self.truth_data.keys():
+
+            # Calculate errors between truth and estimates
+            global_estimate_position_error = global_estimate_position[key] - truth_position[key]
+            truth_orientation[key] = np.array([R.from_quat(q).as_euler('xyz', degrees=False) for q in truth_orientation[key]])
+            global_estimate_orientation[key] = np.array([R.from_quat(q).as_euler('xyz', degrees=False) for q in global_estimate_orientation[key]])
+            global_estimate_orientation_error = global_estimate_orientation[key] - truth_orientation[key]
+
+            # Wrap angles to [-pi, pi]
+            global_estimate_orientation_error[:, 0] = (global_estimate_orientation_error[:, 0] + np.pi) % (2 * np.pi) - np.pi
+            global_estimate_orientation_error[:, 1] = (global_estimate_orientation_error[:, 1] + np.pi) % (2 * np.pi) - np.pi
+            global_estimate_orientation_error[:, 2] = (global_estimate_orientation_error[:, 2] + np.pi) % (2 * np.pi) - np.pi
+
+            # X Position
+            axs[0, column_idx].plot(time[key], global_estimate_position_error[:, 0], color='red')
+            axs[0, column_idx].plot(time[key], global_estimate_position_std[key][:, 0]*3, color='blue')
+            axs[0, column_idx].plot(time[key], -global_estimate_position_std[key][:, 0]*3, color='blue')
+            axs[0, column_idx].set_title(key)
+            axs[0, column_idx].grid()
+
+            # Y Position
+            axs[1, column_idx].plot(time[key], global_estimate_position_error[:, 1], color='red')
+            axs[1, column_idx].plot(time[key], global_estimate_position_std[key][:, 1]*3, color='blue')
+            axs[1, column_idx].plot(time[key], -global_estimate_position_std[key][:, 1]*3, color='blue')
+            axs[1, column_idx].grid()
+
+            # Z Position
+            axs[2, column_idx].plot(time[key], global_estimate_position_error[:, 2], color='red')
+            axs[2, column_idx].plot(time[key], global_estimate_position_std[key][:, 2]*3, color='blue')
+            axs[2, column_idx].plot(time[key], -global_estimate_position_std[key][:, 2]*3, color='blue')
+            axs[2, column_idx].grid()
+
+            # Pitch
+            axs[3, column_idx].plot(time[key], global_estimate_orientation_error[:, 0], color='red')
+            axs[3, column_idx].plot(time[key], global_estimate_orientation_std[key][:, 0]*3, color='blue')
+            axs[3, column_idx].plot(time[key], -global_estimate_orientation_std[key][:, 0]*3, color='blue')
+            axs[3, column_idx].grid()
+
+            # Roll
+            axs[4, column_idx].plot(time[key], global_estimate_orientation_error[:, 1], color='red')
+            axs[4, column_idx].plot(time[key], global_estimate_orientation_std[key][:, 1]*3, color='blue')
+            axs[4, column_idx].plot(time[key], -global_estimate_orientation_std[key][:, 1]*3, color='blue')
+            axs[4, column_idx].grid()
+
+            # Yaw
+            axs[5, column_idx].plot(time[key], global_estimate_orientation_error[:, 2], color='red')
+            axs[5, column_idx].plot(time[key], global_estimate_orientation_std[key][:, 2]*3, color='blue')
+            axs[5, column_idx].plot(time[key], -global_estimate_orientation_std[key][:, 2]*3, color='blue')
+            axs[5, column_idx].set_xlabel('Time (s)')
+            axs[5, column_idx].grid()
+
+            # Add ylabels to leftmost plots
+            if column_idx == 0:
+                axs[0, column_idx].set_ylabel('North Error (m)')
+                axs[1, column_idx].set_ylabel('East Error (m)')
+                axs[2, column_idx].set_ylabel('Down Error (m)')
+                axs[3, column_idx].set_ylabel('Roll Error (rad)')
+                axs[4, column_idx].set_ylabel('Pitch Error (rad)')
+                axs[5, column_idx].set_ylabel('Yaw Error (rad)')
+
+            column_idx += 1
+
+        plt.tight_layout()
+        plt.savefig(global_error_filename)
 
         self.get_logger().info('Plots generated and data saved successfully!')
 

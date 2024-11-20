@@ -38,6 +38,7 @@
     <depend condition="$ROS_VERSION == 2">geometry_msgs</depend>
     <depend condition="$ROS_VERSION == 2">python3-numpy</depend>
     <depend condition="$ROS_VERSION == 2">python3-matplotlib</depend>
+    <depend condition="$ROS_VERSION == 2">python3-scipy</depend>
 
     <!-- System dependencies for both versions -->
     <depend>eigen</depend>
