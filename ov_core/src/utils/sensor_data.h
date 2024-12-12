@@ -82,8 +82,8 @@ struct CameraData {
  * @brief Struct for GPS measurements.
  *
  * GPS measurements come from the multi-agent backend. Measurements come as a tuple of a global measurement and the
- * relative transform from the vehicle receiving the global measurement to the current vehicle. If these are the same,
- * the transformation should be zero.
+ * transform from the vehicle receiving the global measurement to the current vehicle, in global frame. If these are
+ * the same, the transformation should be zero.
  */
 struct GPSData {
 
