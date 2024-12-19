@@ -147,12 +147,10 @@ public:
     std::lock_guard<std::mutex> lock(_mutex_state);
 
     // Store current keyframe states
-    Eigen::Matrix<double, 7, 1> reset_pose = _keyframe->value();
+    Eigen::Matrix<double, 7, 1> delta_pose = _imu->keyframe_pose()->value();
 
-    // Add previous keyframe states to current keyframe
-    Eigen::Matrix<double, 7, 1> new_keyframe = _keyframe->value();
-    new_keyframe.block(0, 0, 4, 1) = ov_core::quat_multiply(_imu->keyframe_quat(), _keyframe->quat());
-    new_keyframe.block(4, 0, 3, 1) = _imu->keyframe_pos() + _keyframe->pos();
+    // Set new keyframe to current imu state
+    Eigen::Matrix<double, 7, 1> new_keyframe = _imu->pose()->value();
     _keyframe->set_value(new_keyframe);
 
     // Reset keyframe states and covariance
@@ -164,7 +162,7 @@ public:
     _Cov.block(_imu->keyframe_pose()->id() + 3, _imu->keyframe_pose()->id() + 3, 3, 3) =
       std::pow(0.05, 2) * Eigen::MatrixXd::Identity(3, 3);
 
-    return reset_pose;
+    return delta_pose;
   }
 
   /// Mutex for locking access to the state

@@ -486,8 +486,7 @@ void Propagator::predict_and_compute(std::shared_ptr<State> state, const ov_core
 void Propagator::predict_mean_discrete(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
                                       Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p,
                                       Eigen::Vector4d &new_keyframe_q, Eigen::Vector3d &new_keyframe_p) {
-  // MAGICC TODO: Replace with actual rotation once keyframe reset has been implemented
-  Eigen::Matrix3d R_GtoK = Eigen::Matrix3d::Identity();
+  Eigen::Matrix3d R_GtoK = state->_keyframe->Rot();
 
   // Pre-compute things
   double w_norm = w_hat.norm();
@@ -862,9 +861,7 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
                                           const Eigen::Vector3d &a_uncorrected, const Eigen::Vector4d &new_q, const Eigen::Vector3d &new_v,
                                           const Eigen::Vector3d &new_p, const Eigen::Vector4d &new_keyframe_q,
                                           const Eigen::Vector3d &new_keyframe_p, Eigen::MatrixXd &F, Eigen::MatrixXd &G) {
-
-  // MAGICC TODO: Replace with actual rotation once keyframe reset has been implemented
-  Eigen::Matrix3d R_GtoK = Eigen::Matrix3d::Identity();
+  Eigen::Matrix3d R_GtoK = state->_keyframe_def->Rot();
 
   // Get the locations of each entry of the imu state
   int local_size = 0;

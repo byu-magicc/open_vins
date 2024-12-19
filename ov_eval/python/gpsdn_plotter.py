@@ -256,7 +256,8 @@ class DataPlotterNode(Node):
             keyframe_change_count = keyframe_change_idx[1:] - keyframe_change_idx[:-1]
             keyframe_change_count = np.insert(keyframe_change_count, len(keyframe_change_count), len(keyframe_def_position[key]) - keyframe_change_idx[-1])
             keyframe_def_truth_position[key] = global_truth_position[key][keyframe_change_idx - 1]
-            keyframe_def_truth_position[key][0] = global_truth_position[key][0] - keyframe_estimate_position[key][0]
+            R_KtoG_0 = np.array(R.from_euler('xyz', keyframe_def_orientation[key][0]).as_dcm())
+            keyframe_def_truth_position[key][0] = global_truth_position[key][0] - R_KtoG_0 @ keyframe_estimate_position[key][0]
             keyframe_def_truth_position[key] = np.repeat(keyframe_def_truth_position[key], keyframe_change_count, axis=0)
             keyframe_def_truth_orientation[key] = global_truth_orientation[key][keyframe_change_idx - 1]
             keyframe_def_truth_orientation[key][0] = global_truth_orientation[key][0] - keyframe_estimate_orientation[key][0]
@@ -266,8 +267,8 @@ class DataPlotterNode(Node):
             keyframe_truth_position[key] = global_truth_position[key] - keyframe_def_truth_position[key]
             temp = []
             for i in range(len(keyframe_truth_position[key])):
-                Rot = np.array(R.from_euler('xyz', keyframe_def_truth_orientation[key][i]).as_dcm())
-                temp.append(Rot.T @ keyframe_truth_position[key][i])
+                R_KtoG = np.array(R.from_euler('xyz', keyframe_def_truth_orientation[key][i]).as_dcm())
+                temp.append(R_KtoG.T @ keyframe_truth_position[key][i])
             keyframe_truth_position[key] = np.array(temp)
             keyframe_truth_orientation[key] = global_truth_orientation[key] - keyframe_def_truth_orientation[key]
 
