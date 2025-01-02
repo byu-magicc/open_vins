@@ -32,6 +32,7 @@
 #include <string>
 
 #include "VioManagerOptions.h"
+#include "types/PoseJPL.h"
 
 namespace ov_core {
 struct ImuData;
@@ -103,7 +104,7 @@ public:
   void initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate);
 
   /// Reset the keyframe and keyframe states, returning the states prior to the reset.
-  Eigen::Matrix<double, 7, 1> reset_keyframe();
+  ov_type::PoseJPL reset_keyframe();
 
   /// If we are initialized or not
   bool initialized() { return is_initialized_vio && timelastupdate != -1; }

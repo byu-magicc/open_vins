@@ -73,7 +73,7 @@ class DataPlotterNode(Node):
                 lambda msg, n=namespace: self.keyframe_estimate_data[n].append(msg.pose),
                 1000
             )
-            keyframe_topic_name = '/' + namespace + '/keyframe'
+            keyframe_topic_name = '/' + namespace + '/keyframe_def'
             self.keyframe_def_subs[namespace] = self.create_subscription(
                 PoseStamped,
                 keyframe_topic_name,
@@ -273,8 +273,8 @@ class DataPlotterNode(Node):
             keyframe_truth_orientation[key] = global_truth_orientation[key] - keyframe_def_truth_orientation[key]
 
             # Calculate errors between truth and estimates
-            keyframe_position_error[key] = keyframe_estimate_position[key] - keyframe_truth_position[key]
-            keyframe_orientation_error[key] = keyframe_estimate_orientation[key] - keyframe_truth_orientation[key]
+            keyframe_position_error[key] = keyframe_truth_position[key] - keyframe_estimate_position[key]
+            keyframe_orientation_error[key] = keyframe_truth_orientation[key] - keyframe_estimate_orientation[key]
             keyframe_orientation_error[key] = (keyframe_orientation_error[key] + np.pi) % (2 * np.pi) - np.pi
 
 

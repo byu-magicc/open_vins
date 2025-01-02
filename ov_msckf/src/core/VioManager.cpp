@@ -327,7 +327,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   do_feature_propagate_update(message);
 }
 
-Eigen::Matrix<double, 7, 1> VioManager::reset_keyframe() {
+ov_type::PoseJPL VioManager::reset_keyframe() {
   return state->reset_keyframe();
 }
 

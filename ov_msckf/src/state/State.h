@@ -137,30 +137,27 @@ public:
   /**
   * @brief Reset the keyframe to current keyframe states
   *
-  * This will set the keyframe definition to the current keyframe plus the change in the keyframe
-  * states, propagating the keyframe forward to the next keyframe. The keyframe states are reset
-  * to zero, as are their variances and covariances with all other states.
+  * This will set the keyframe definition to the current imu estimate. The keyframe states are
+  * reset to zero, as are their variances and covariances with all other states.
   *
   * @return The keyframe states at time of reset
   */
-  Eigen::Matrix<double, 7, 1> reset_keyframe() {
+  ov_type::PoseJPL reset_keyframe() {
     std::lock_guard<std::mutex> lock(_mutex_state);
 
     // Store current keyframe states
-    Eigen::Matrix<double, 7, 1> delta_pose = _imu->keyframe_pose()->value();
+    ov_type::PoseJPL delta_pose;
+    delta_pose.set_value(_imu->keyframe_pose()->value());
 
     // Set new keyframe to current imu state
-    Eigen::Matrix<double, 7, 1> new_keyframe = _imu->pose()->value();
-    _keyframe->set_value(new_keyframe);
+    _keyframe_def->set_value(_imu->pose()->value());
 
     // Reset keyframe states and covariance
     _imu->reset_keyframe_states();
     _Cov.block(_imu->keyframe_pose()->id(), 0, 6, _Cov.cols()).setZero();
     _Cov.block(0, _imu->keyframe_pose()->id(), _Cov.rows(), 6).setZero();
-    _Cov.block(_imu->keyframe_pose()->id(), _imu->keyframe_pose()->id(), 3, 3) =
-      std::pow(0.017, 2) * Eigen::MatrixXd::Identity(3, 3);
-    _Cov.block(_imu->keyframe_pose()->id() + 3, _imu->keyframe_pose()->id() + 3, 3, 3) =
-      std::pow(0.05, 2) * Eigen::MatrixXd::Identity(3, 3);
+    _Cov.block(_imu->keyframe_pose()->id(), _imu->keyframe_pose()->id(), 3, 3) = 1e-9 * Eigen::MatrixXd::Identity(3, 3);
+    _Cov.block(_imu->keyframe_pose()->id() + 3, _imu->keyframe_pose()->id() + 3, 3, 3) = 1e-9 * Eigen::MatrixXd::Identity(3, 3);
 
     return delta_pose;
   }
@@ -210,8 +207,8 @@ public:
   /// Rotation from accelerometer to the "IMU" gyroscope frame frame (rpng model)
   std::shared_ptr<ov_type::JPLQuat> _calib_imu_ACCtoIMU;
 
-  /// Rotation and translation from global frame to current keyframe
-  std::shared_ptr<ov_type::PoseJPL> _keyframe;
+  /// Rotation and translation from global frame to imu estimate at last keyframe reset
+  std::shared_ptr<ov_type::PoseJPL> _keyframe_def;
 
 private:
   // Define that the state helper is a friend class of this class

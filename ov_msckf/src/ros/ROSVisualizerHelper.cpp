@@ -244,9 +244,9 @@ void ROSVisualizerHelper::sim_save_total_state_to_file(std::shared_ptr<State> st
   of_state_est.setf(std::ios::fixed, std::ios::floatfield);
   of_state_est << timestamp_inI << " ";
   of_state_est.precision(6);
-  of_state_est << state->_keyframe->quat()(0) << " " << state->_keyframe->quat()(1) << " " << state->_keyframe->quat()(2) << " "
-               << state->_keyframe->quat()(3) << " ";
-  of_state_est << state->_keyframe->pos()(0) << " " << state->_keyframe->pos()(1) << " " << state->_keyframe->pos()(2) << " ";
+  of_state_est << state->_keyframe_def->quat()(0) << " " << state->_keyframe_def->quat()(1) << " " << state->_keyframe_def->quat()(2) << " "
+               << state->_keyframe_def->quat()(3) << " ";
+  of_state_est << state->_keyframe_def->pos()(0) << " " << state->_keyframe_def->pos()(1) << " " << state->_keyframe_def->pos()(2) << " ";
   of_state_est << state->_imu->quat()(0) << " " << state->_imu->quat()(1) << " " << state->_imu->quat()(2) << " " << state->_imu->quat()(3)
                << " ";
   of_state_est << state->_imu->pos()(0) << " " << state->_imu->pos()(1) << " " << state->_imu->pos()(2) << " ";
@@ -262,9 +262,9 @@ void ROSVisualizerHelper::sim_save_total_state_to_file(std::shared_ptr<State> st
   of_state_std.setf(std::ios::fixed, std::ios::floatfield);
   of_state_std << timestamp_inI << " ";
   of_state_std.precision(6);
-  of_state_std << state->_keyframe->quat()(0) << " " << state->_keyframe->quat()(1) << " " << state->_keyframe->quat()(2) << " "
-               << state->_keyframe->quat()(3) << " ";
-  of_state_std << state->_keyframe->pos()(0) << " " << state->_keyframe->pos()(1) << " " << state->_keyframe->pos()(2) << " ";
+  of_state_std << state->_keyframe_def->quat()(0) << " " << state->_keyframe_def->quat()(1) << " " << state->_keyframe_def->quat()(2) << " "
+               << state->_keyframe_def->quat()(3) << " ";
+  of_state_std << state->_keyframe_def->pos()(0) << " " << state->_keyframe_def->pos()(1) << " " << state->_keyframe_def->pos()(2) << " ";
   int id = state->_imu->q()->id();
   of_state_std << std::sqrt(cov(id + 0, id + 0)) << " " << std::sqrt(cov(id + 1, id + 1)) << " " << std::sqrt(cov(id + 2, id + 2)) << " ";
   id = state->_imu->p()->id();

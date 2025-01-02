@@ -486,7 +486,7 @@ void Propagator::predict_and_compute(std::shared_ptr<State> state, const ov_core
 void Propagator::predict_mean_discrete(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
                                       Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p,
                                       Eigen::Vector4d &new_keyframe_q, Eigen::Vector3d &new_keyframe_p) {
-  Eigen::Matrix3d R_GtoK = state->_keyframe->Rot();
+  Eigen::Matrix3d R_GtoK = state->_keyframe_def->Rot();
 
   // Pre-compute things
   double w_norm = w_hat.norm();
@@ -634,7 +634,7 @@ void Propagator::compute_Xi_sum(std::shared_ptr<State> state, double dt, const E
   Jr_ktok1 = ov_core::Jr_so3(-w_hat * dt);
 
   // Now begin the integration of each component
-  // Based on the keyframe theta, let's decide which integration will be used
+  // Based on the delta theta, let's decide which integration will be used
   bool small_w = (w_norm < 1.0 / 180 * M_PI / 2);
   if (!small_w) {
 
@@ -723,7 +723,7 @@ void Propagator::compute_F_and_G_analytic(std::shared_ptr<State> state, double d
   local_size += state->_imu->bg()->size();
   int ba_id = local_size;
   local_size += state->_imu->ba()->size();
-  int keyframe_q_id = local_size;
+  int keyframe_th_id = local_size;
   local_size += state->_imu->keyframe_q()->size();
   int keyframe_p_id = local_size;
   local_size += state->_imu->keyframe_p()->size();

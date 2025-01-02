@@ -49,8 +49,8 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
   PRINT_DEBUG("Publishing: %s\n", pub_poseimu.getTopic().c_str());
   pub_poseimu_keyframe = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>("poseimu_keyframe", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_poseimu_keyframe.getTopic().c_str());
-  pub_keyframe = nh->advertise<geometry_msgs::PoseStamped>("keyframe", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_keyframe.getTopic().c_str());
+  pub_keyframe_def = nh->advertise<geometry_msgs::PoseStamped>("keyframe_def", 2);
+  PRINT_DEBUG("Publishing: %s\n", pub_keyframe_def.getTopic().c_str());
   pub_odomimu = nh->advertise<nav_msgs::Odometry>("odomimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_odomimu.getTopic().c_str());
   pub_pathimu = nh->advertise<nav_msgs::Path>("pathimu", 2);
@@ -123,10 +123,10 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
     // Open the files
     of_state_est.open(filepath_est.c_str());
     of_state_std.open(filepath_std.c_str());
-    of_state_est << "# timestamp(s) keyframe_q keyframe_p imu_q imu_p imu_v bg ba keyframe_imu_q keyframe_imu_p cam_imu_dt num_cam cam0_k"
-                 << " cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc" << std::endl;
-    of_state_std << "# timestamp(s) keyframe_q keyframe_p imu_q imu_p imu_v bg ba keyframe_imu_q keyframe_imu_p cam_imu_dt num_cam cam0_k"
-                 << " cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc" << std::endl;
+    of_state_est << "# timestamp(s) keyframe_def_q keyframe_def_p imu_q imu_p imu_v bg ba keyframe_imu_q keyframe_imu_p cam_imu_dt num_cam"
+                 << "cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc" << std::endl;
+    of_state_std << "# timestamp(s) keyframe_def_q keyframe_def_p imu_q imu_p imu_v bg ba keyframe_imu_q keyframe_imu_p cam_imu_dt num_cam"
+                 << "cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc" << std::endl;
 
     // Groundtruth if we are simulating
     if (_sim != nullptr) {
@@ -683,16 +683,16 @@ void ROS1Visualizer::publish_state() {
   geometry_msgs::PoseStamped keyframe;
   keyframe.header = poseImuKeyframe.header;
   keyframe.header.frame_id = "global";
-  keyframe.pose.orientation.x = state->_keyframe->quat()(0);
-  keyframe.pose.orientation.y = state->_keyframe->quat()(1);
-  keyframe.pose.orientation.z = state->_keyframe->quat()(2);
-  keyframe.pose.orientation.w = state->_keyframe->quat()(3);
-  keyframe.pose.position.x = state->_keyframe->pos()(0);
-  keyframe.pose.position.y = state->_keyframe->pos()(1);
-  keyframe.pose.position.z = state->_keyframe->pos()(2);
+  keyframe.pose.orientation.x = state->_keyframe_def->quat()(0);
+  keyframe.pose.orientation.y = state->_keyframe_def->quat()(1);
+  keyframe.pose.orientation.z = state->_keyframe_def->quat()(2);
+  keyframe.pose.orientation.w = state->_keyframe_def->quat()(3);
+  keyframe.pose.position.x = state->_keyframe_def->pos()(0);
+  keyframe.pose.position.y = state->_keyframe_def->pos()(1);
+  keyframe.pose.position.z = state->_keyframe_def->pos()(2);
 
   // Publish message
-  pub_keyframe.publish(keyframe);
+  pub_keyframe_def.publish(keyframe);
 
   // Move them forward in time
   poses_seq_imu++;

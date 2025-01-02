@@ -49,8 +49,8 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
   PRINT_DEBUG("Publishing: %s\n", pub_poseimu->get_topic_name());
   pub_poseimu_keyframe = node->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("poseimu_keyframe", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_poseimu_keyframe->get_topic_name());
-  pub_keyframe = node->create_publisher<geometry_msgs::msg::PoseStamped>("keyframe", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_keyframe->get_topic_name());
+  pub_keyframe_def = node->create_publisher<geometry_msgs::msg::PoseStamped>("keyframe_def", 2);
+  PRINT_DEBUG("Publishing: %s\n", pub_keyframe_def->get_topic_name());
   pub_odomimu = node->create_publisher<nav_msgs::msg::Odometry>("odomimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_odomimu->get_topic_name());
   pub_pathimu = node->create_publisher<nav_msgs::msg::Path>("pathimu", 2);
@@ -135,10 +135,10 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
     // Open the files
     of_state_est.open(filepath_est.c_str());
     of_state_std.open(filepath_std.c_str());
-    of_state_est << "# timestamp(s) keyframe_q keyframe_p imu_q imu_p imu_v bg ba keyframe_imu_q keyframe_imu_p cam_imu_dt num_cam cam0_k"
-                 << " cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc" << std::endl;
-    of_state_std << "# timestamp(s) keyframe_q keyframe_p imu_q imu_p imu_v bg ba keyframe_imu_q keyframe_imu_p cam_imu_dt num_cam cam0_k"
-                 << " cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc" << std::endl;
+    of_state_est << "# timestamp(s) keyframe_def_q keyframe_def_p imu_q imu_p imu_v bg ba keyframe_imu_q keyframe_imu_p cam_imu_dt num_cam"
+                 << " cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc" << std::endl;
+    of_state_std << "# timestamp(s) keyframe_def_q keyframe_def_p imu_q imu_p imu_v bg ba keyframe_imu_q keyframe_imu_p cam_imu_dt num_cam"
+                 << " cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc" << std::endl;
 
     // Groundtruth if we are simulating
     if (_sim != nullptr) {
@@ -680,16 +680,16 @@ void ROS2Visualizer::publish_state() {
   // Create keyframe message
   geometry_msgs::msg::PoseStamped keyframe;
   keyframe.header = poseImuKeyframe.header;
-  keyframe.pose.orientation.x = state->_keyframe->quat()(0);
-  keyframe.pose.orientation.y = state->_keyframe->quat()(1);
-  keyframe.pose.orientation.z = state->_keyframe->quat()(2);
-  keyframe.pose.orientation.w = state->_keyframe->quat()(3);
-  keyframe.pose.position.x = state->_keyframe->pos()(0);
-  keyframe.pose.position.y = state->_keyframe->pos()(1);
-  keyframe.pose.position.z = state->_keyframe->pos()(2);
+  keyframe.pose.orientation.x = state->_keyframe_def->quat()(0);
+  keyframe.pose.orientation.y = state->_keyframe_def->quat()(1);
+  keyframe.pose.orientation.z = state->_keyframe_def->quat()(2);
+  keyframe.pose.orientation.w = state->_keyframe_def->quat()(3);
+  keyframe.pose.position.x = state->_keyframe_def->pos()(0);
+  keyframe.pose.position.y = state->_keyframe_def->pos()(1);
+  keyframe.pose.position.z = state->_keyframe_def->pos()(2);
 
   // Publish message
-  pub_keyframe->publish(keyframe);
+  pub_keyframe_def->publish(keyframe);
 }
 
 void ROS2Visualizer::publish_images() {

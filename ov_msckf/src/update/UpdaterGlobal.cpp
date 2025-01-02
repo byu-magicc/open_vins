@@ -9,6 +9,7 @@ using namespace ov_msckf;
 UpdaterGlobal::UpdaterGlobal() {}
 
 void UpdaterGlobal::feed_gps(const ov_core::GPSData &message) {
+  std::lock_guard<std::mutex> lck(gps_data_mtx);
   gps_data.push_back(message);
 }
 

@@ -74,9 +74,9 @@ public:
 
   /**
    * @brief Performs update operation using JPLQuat update for orientation, then vector updates for
-   * position, velocity, gyro bias, and accel bias (in that order).
+   * position, velocity, gyro bias, accel bias, keyframe orientation, and keyframe position (in that order).
    *
-   * @param dx 15 DOF vector encoding update using the following order (q, p, v, bg, ba)
+   * @param dx 21 DOF vector encoding update using the following order (q, p, v, bg, ba, q_k, p_k)
    */
   void update(const Eigen::VectorXd &dx) override {
 
@@ -121,12 +121,11 @@ public:
    * @brief Reset the keyframe states to zero
    */
   void reset_keyframe_states() {
-    Eigen::Matrix<double, 7, 1> new_keyframe = Eigen::Matrix<double, 7, 1>::Zero();
-    new_keyframe(3) = 1.0;
-    keyframe_pose()->set_value(new_keyframe);
-    keyframe_pose()->set_fej(new_keyframe);
-    _value.block(16, 0, 7, 1) = new_keyframe;
-    _fej.block(16, 0, 7, 1) = new_keyframe;
+    ov_type::PoseJPL new_keyframe;
+    keyframe_pose()->set_value(new_keyframe.value());
+    keyframe_pose()->set_fej(new_keyframe.value());
+    _value.block(16, 0, 7, 1) = new_keyframe.value();
+    _fej.block(16, 0, 7, 1) = new_keyframe.value();
   }
 
   std::shared_ptr<Type> clone() override {

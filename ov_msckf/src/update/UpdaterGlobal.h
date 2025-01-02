@@ -42,6 +42,7 @@ public:
 private:
   /// GPS data from the multi-agent backend
   std::vector<ov_core::GPSData> gps_data;
+  std::mutex gps_data_mtx;
 };
 
 } // namespace ov_msckf
