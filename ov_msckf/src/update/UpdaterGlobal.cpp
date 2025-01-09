@@ -39,7 +39,13 @@ void UpdaterGlobal::update(std::shared_ptr<State> state) {
   // Clear out old/invalid data
   if (gps_data.size() > 0) {
     gps_data.clear();
+
+    // Remove all clones
+    for (auto& clone : state->_clones_IMU) {
+      StateHelper::marginalize(state, clone.second);
+    }
     state->_clones_IMU.clear();
+
     state->reset_keyframe();
   }
 }
