@@ -384,39 +384,39 @@ class DataPlotterNode(Node):
 
             # X Position
             axs[0, column_idx].plot(time[key], global_position_error[key][:, 0], color='red', label='Error')
-            axs[0, column_idx].plot(time[key], global_position_std[key][:, 0]*3, color='blue', label='3 Sigma')
-            axs[0, column_idx].plot(time[key], -global_position_std[key][:, 0]*3, color='blue')
+            axs[0, column_idx].plot(time[key], global_position_std[key][:, 0]*2, color='blue', label='2 Sigma')
+            axs[0, column_idx].plot(time[key], -global_position_std[key][:, 0]*2, color='blue')
             axs[0, column_idx].set_title(key)
             axs[0, column_idx].grid()
 
             # Y Position
             axs[1, column_idx].plot(time[key], global_position_error[key][:, 1], color='red')
-            axs[1, column_idx].plot(time[key], global_position_std[key][:, 1]*3, color='blue')
-            axs[1, column_idx].plot(time[key], -global_position_std[key][:, 1]*3, color='blue')
+            axs[1, column_idx].plot(time[key], global_position_std[key][:, 1]*2, color='blue')
+            axs[1, column_idx].plot(time[key], -global_position_std[key][:, 1]*2, color='blue')
             axs[1, column_idx].grid()
 
             # Z Position
             axs[2, column_idx].plot(time[key], global_position_error[key][:, 2], color='red')
-            axs[2, column_idx].plot(time[key], global_position_std[key][:, 2]*3, color='blue')
-            axs[2, column_idx].plot(time[key], -global_position_std[key][:, 2]*3, color='blue')
+            axs[2, column_idx].plot(time[key], global_position_std[key][:, 2]*2, color='blue')
+            axs[2, column_idx].plot(time[key], -global_position_std[key][:, 2]*2, color='blue')
             axs[2, column_idx].grid()
 
             # Pitch
             axs[3, column_idx].plot(time[key], global_orientation_error[key][:, 0], color='red')
-            axs[3, column_idx].plot(time[key], global_orientation_std[key][:, 0]*3, color='blue')
-            axs[3, column_idx].plot(time[key], -global_orientation_std[key][:, 0]*3, color='blue')
+            axs[3, column_idx].plot(time[key], global_orientation_std[key][:, 0]*2, color='blue')
+            axs[3, column_idx].plot(time[key], -global_orientation_std[key][:, 0]*2, color='blue')
             axs[3, column_idx].grid()
 
             # Roll
             axs[4, column_idx].plot(time[key], global_orientation_error[key][:, 1], color='red')
-            axs[4, column_idx].plot(time[key], global_orientation_std[key][:, 1]*3, color='blue')
-            axs[4, column_idx].plot(time[key], -global_orientation_std[key][:, 1]*3, color='blue')
+            axs[4, column_idx].plot(time[key], global_orientation_std[key][:, 1]*2, color='blue')
+            axs[4, column_idx].plot(time[key], -global_orientation_std[key][:, 1]*2, color='blue')
             axs[4, column_idx].grid()
 
             # Yaw
             axs[5, column_idx].plot(time[key], global_orientation_error[key][:, 2], color='red')
-            axs[5, column_idx].plot(time[key], global_orientation_std[key][:, 2]*3, color='blue')
-            axs[5, column_idx].plot(time[key], -global_orientation_std[key][:, 2]*3, color='blue')
+            axs[5, column_idx].plot(time[key], global_orientation_std[key][:, 2]*2, color='blue')
+            axs[5, column_idx].plot(time[key], -global_orientation_std[key][:, 2]*2, color='blue')
             axs[5, column_idx].set_xlabel('Time (s)')
             axs[5, column_idx].grid()
 
@@ -505,39 +505,39 @@ class DataPlotterNode(Node):
 
             # X Position
             axs[0, column_idx].plot(time[key], keyframe_position_error[key][:, 0], color='red', label='Error')
-            axs[0, column_idx].plot(time[key], 3*keyframe_position_std[key][:, 0], color='blue', label='3 Sigma')
-            axs[0, column_idx].plot(time[key], -3*keyframe_position_std[key][:, 0], color='blue')
+            axs[0, column_idx].plot(time[key], 2*keyframe_position_std[key][:, 0], color='blue', label='2 Sigma')
+            axs[0, column_idx].plot(time[key], -2*keyframe_position_std[key][:, 0], color='blue')
             axs[0, column_idx].set_title(key)
             axs[0, column_idx].grid()
 
             # Y Position
             axs[1, column_idx].plot(time[key], keyframe_position_error[key][:, 1], color='red')
-            axs[1, column_idx].plot(time[key], 3*keyframe_position_std[key][:, 1], color='blue')
-            axs[1, column_idx].plot(time[key], -3*keyframe_position_std[key][:, 1], color='blue')
+            axs[1, column_idx].plot(time[key], 2*keyframe_position_std[key][:, 1], color='blue')
+            axs[1, column_idx].plot(time[key], -2*keyframe_position_std[key][:, 1], color='blue')
             axs[1, column_idx].grid()
 
             # Z Position
             axs[2, column_idx].plot(time[key], keyframe_position_error[key][:, 2], color='red')
-            axs[2, column_idx].plot(time[key], 3*keyframe_position_std[key][:, 2], color='blue')
-            axs[2, column_idx].plot(time[key], -3*keyframe_position_std[key][:, 2], color='blue')
+            axs[2, column_idx].plot(time[key], 2*keyframe_position_std[key][:, 2], color='blue')
+            axs[2, column_idx].plot(time[key], -2*keyframe_position_std[key][:, 2], color='blue')
             axs[2, column_idx].grid()
 
             # Pitch
             axs[3, column_idx].plot(time[key], keyframe_orientation_error[key][:, 0], color='red')
-            axs[3, column_idx].plot(time[key], 3*keyframe_orientation_std[key][:, 0], color='blue')
-            axs[3, column_idx].plot(time[key], -3*keyframe_orientation_std[key][:, 0], color='blue')
+            axs[3, column_idx].plot(time[key], 2*keyframe_orientation_std[key][:, 0], color='blue')
+            axs[3, column_idx].plot(time[key], -2*keyframe_orientation_std[key][:, 0], color='blue')
             axs[3, column_idx].grid()
 
             # Roll
             axs[4, column_idx].plot(time[key], keyframe_orientation_error[key][:, 1], color='red')
-            axs[4, column_idx].plot(time[key], 3*keyframe_orientation_std[key][:, 1], color='blue')
-            axs[4, column_idx].plot(time[key], -3*keyframe_orientation_std[key][:, 1], color='blue')
+            axs[4, column_idx].plot(time[key], 2*keyframe_orientation_std[key][:, 1], color='blue')
+            axs[4, column_idx].plot(time[key], -2*keyframe_orientation_std[key][:, 1], color='blue')
             axs[4, column_idx].grid()
 
             # Yaw
             axs[5, column_idx].plot(time[key], keyframe_orientation_error[key][:, 2], color='red')
-            axs[5, column_idx].plot(time[key], 3*keyframe_orientation_std[key][:, 2], color='blue')
-            axs[5, column_idx].plot(time[key], -3*keyframe_orientation_std[key][:, 2], color='blue')
+            axs[5, column_idx].plot(time[key], 2*keyframe_orientation_std[key][:, 2], color='blue')
+            axs[5, column_idx].plot(time[key], -2*keyframe_orientation_std[key][:, 2], color='blue')
             axs[5, column_idx].set_xlabel('Time (s)')
             axs[5, column_idx].grid()
 
