@@ -45,7 +45,5 @@ void UpdaterGlobal::update(std::shared_ptr<State> state) {
       StateHelper::marginalize(state, clone.second);
     }
     state->_clones_IMU.clear();
-
-    state->reset_keyframe();
   }
 }
