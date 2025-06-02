@@ -327,10 +327,6 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   do_feature_propagate_update(message);
 }
 
-ov_type::PoseJPL VioManager::reset_keyframe() {
-  return state->reset_keyframe();
-}
-
 void VioManager::do_feature_propagate_update(const ov_core::CameraData &message) {
 
   //===================================================================================

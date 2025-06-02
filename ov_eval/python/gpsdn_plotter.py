@@ -32,19 +32,11 @@ class DataPlotterNode(Node):
         self.global_estimate_data = {}
         for namespace in agent_namespaces:
             self.global_estimate_data[namespace] = []
-        self.keyframe_estimate_data = {}
-        for namespace in agent_namespaces:
-            self.keyframe_estimate_data[namespace] = []
-        self.keyframe_def_data = {}
-        for namespace in agent_namespaces:
-            self.keyframe_def_data[namespace] = []
 
         # Create subscribers
         self.time_subs = {}
         self.global_truth_subs = {}
         self.global_estimate_subs = {}
-        self.keyframe_estimate_subs = {}
-        self.keyframe_def_subs = {}
         for namespace in agent_namespaces:
             truth_topic_name = '/' + namespace + '/posegt'
             self.time_subs[namespace] = self.create_subscription(
@@ -66,20 +58,6 @@ class DataPlotterNode(Node):
                 lambda msg, n=namespace: self.global_estimate_data[n].append(msg.pose),
                 1000
             )
-            keyframe_estimate_topic_name = '/' + namespace + '/poseimu_keyframe'
-            self.keyframe_estimate_subs[namespace] = self.create_subscription(
-                PoseWithCovarianceStamped,
-                keyframe_estimate_topic_name,
-                lambda msg, n=namespace: self.keyframe_estimate_data[n].append(msg.pose),
-                1000
-            )
-            keyframe_topic_name = '/' + namespace + '/keyframe_def'
-            self.keyframe_def_subs[namespace] = self.create_subscription(
-                PoseStamped,
-                keyframe_topic_name,
-                lambda msg, n=namespace: self.keyframe_def_data[n].append(msg.pose),
-                1000
-            )
 
 
     def plot_data(self):
@@ -91,12 +69,6 @@ class DataPlotterNode(Node):
         global_position_std = {}
         global_estimate_orientation = {}
         global_orientation_std = {}
-        keyframe_estimate_position = {}
-        keyframe_position_std = {}
-        keyframe_estimate_orientation = {}
-        keyframe_orientation_std = {}
-        keyframe_def_position = {}
-        keyframe_def_orientation = {}
         for key in self.global_truth_data.keys():
             time[key] = []
             global_truth_position[key] = []
@@ -105,18 +77,10 @@ class DataPlotterNode(Node):
             global_position_std[key] = []
             global_estimate_orientation[key] = []
             global_orientation_std[key] = []
-            keyframe_estimate_position[key] = []
-            keyframe_position_std[key] = []
-            keyframe_estimate_orientation[key] = []
-            keyframe_orientation_std[key] = []
-            keyframe_def_position[key] = []
-            keyframe_def_orientation[key] = []
 
             time_data = self.time_data[key]
             global_truth_data = self.global_truth_data[key]
             global_estimate_data = self.global_estimate_data[key]
-            keyframe_estimate_data = self.keyframe_estimate_data[key]
-            keyframe_def_data = self.keyframe_def_data[key]
             for i in range(len(global_truth_data)):
                 time[key].append(time_data[i])
                 global_truth_position[key].append([
@@ -151,38 +115,6 @@ class DataPlotterNode(Node):
                     np.sqrt(global_estimate_data[i].covariance[28]),
                     np.sqrt(global_estimate_data[i].covariance[35])
                 ])
-                keyframe_estimate_position[key].append([
-                    keyframe_estimate_data[i].pose.position.x,
-                    keyframe_estimate_data[i].pose.position.y,
-                    keyframe_estimate_data[i].pose.position.z
-                ])
-                keyframe_position_std[key].append([
-                    np.sqrt(keyframe_estimate_data[i].covariance[0]),
-                    np.sqrt(keyframe_estimate_data[i].covariance[7]),
-                    np.sqrt(keyframe_estimate_data[i].covariance[14])
-                ])
-                keyframe_estimate_orientation[key].append([
-                    keyframe_estimate_data[i].pose.orientation.x,
-                    keyframe_estimate_data[i].pose.orientation.y,
-                    keyframe_estimate_data[i].pose.orientation.z,
-                    keyframe_estimate_data[i].pose.orientation.w
-                ])
-                keyframe_orientation_std[key].append([
-                    np.sqrt(keyframe_estimate_data[i].covariance[21]),
-                    np.sqrt(keyframe_estimate_data[i].covariance[28]),
-                    np.sqrt(keyframe_estimate_data[i].covariance[35])
-                ])
-                keyframe_def_position[key].append([
-                    keyframe_def_data[i].position.x,
-                    keyframe_def_data[i].position.y,
-                    keyframe_def_data[i].position.z
-                ])
-                keyframe_def_orientation[key].append([
-                    keyframe_def_data[i].orientation.x,
-                    keyframe_def_data[i].orientation.y,
-                    keyframe_def_data[i].orientation.z,
-                    keyframe_def_data[i].orientation.w
-                ])
             time[key] = np.array(time[key]) - time[key][0]
             global_truth_position[key] = np.array(global_truth_position[key])
             global_truth_orientation[key] = np.array(global_truth_orientation[key])
@@ -190,12 +122,6 @@ class DataPlotterNode(Node):
             global_position_std[key] = np.array(global_position_std[key])
             global_estimate_orientation[key] = np.array(global_estimate_orientation[key])
             global_orientation_std[key] = np.array(global_orientation_std[key])
-            keyframe_estimate_position[key] = np.array(keyframe_estimate_position[key])
-            keyframe_position_std[key] = np.array(keyframe_position_std[key])
-            keyframe_estimate_orientation[key] = np.array(keyframe_estimate_orientation[key])
-            keyframe_orientation_std[key] = np.array(keyframe_orientation_std[key])
-            keyframe_def_position[key] = np.array(keyframe_def_position[key])
-            keyframe_def_orientation[key] = np.array(keyframe_def_orientation[key])
 
         # Get filenames for saving plots and data
         counter = 0
@@ -205,8 +131,6 @@ class DataPlotterNode(Node):
         global_xy_position_and_error_filename = f'global_xy_position_and_error_{counter}.svg'
         global_position_filename = f'global_position_{counter}.svg'
         global_error_filename = f'global_error_{counter}.svg'
-        keyframe_position_filename = f'keyframe_position_{counter}.svg'
-        keyframe_error_filename = f'keyframe_error_{counter}.svg'
 
         # Save all data to a .npz file
         data = {}
@@ -218,12 +142,6 @@ class DataPlotterNode(Node):
             data[f'{key}_global_position_std'] = global_position_std[key]
             data[f'{key}_global_estimate_orientation'] = global_estimate_orientation[key]
             data[f'{key}_global_orientation_std'] = global_orientation_std[key]
-            data[f'{key}_keyframe_estimate_position'] = keyframe_estimate_position[key]
-            data[f'{key}_keyframe_position_std'] = keyframe_position_std[key]
-            data[f'{key}_keyframe_estimate_orientation'] = keyframe_estimate_orientation[key]
-            data[f'{key}_keyframe_orientation_std'] = keyframe_orientation_std[key]
-            data[f'{key}_keyframe_def_position'] = keyframe_def_position[key]
-            data[f'{key}_keyframe_def_orientation'] = keyframe_def_orientation[key]
         np.savez(data_filename, **data)
 
 
@@ -231,51 +149,15 @@ class DataPlotterNode(Node):
 
         global_position_error = {}
         global_orientation_error = {}
-        keyframe_def_truth_position = {}
-        keyframe_def_truth_orientation = {}
-        keyframe_truth_position = {}
-        keyframe_truth_orientation = {}
-        keyframe_position_error = {}
-        keyframe_orientation_error = {}
         for key in self.global_truth_data.keys():
             # Convert quaternions to euler angles
             global_truth_orientation[key] = np.array([R.from_quat(q).as_euler('xyz', degrees=False) for q in global_truth_orientation[key]])
             global_estimate_orientation[key] = np.array([R.from_quat(q).as_euler('xyz', degrees=False) for q in global_estimate_orientation[key]])
-            keyframe_estimate_orientation[key] = np.array([R.from_quat(q).as_euler('xyz', degrees=False) for q in keyframe_estimate_orientation[key]])
-            keyframe_def_orientation[key] = np.array([R.from_quat(q).as_euler('xyz', degrees=False) for q in keyframe_def_orientation[key]])
 
             # Calculate errors between truth and estimates
             global_position_error[key] = global_truth_position[key] - global_estimate_position[key]
             global_orientation_error[key] = global_truth_orientation[key] - global_estimate_orientation[key]
             global_orientation_error[key] = (global_orientation_error[key] + np.pi) % (2 * np.pi) - np.pi
-
-            # Calculate the true keyframe definitions
-            keyframe_change_idx = np.where(keyframe_def_position[key][1:] != keyframe_def_position[key][:-1])[0] + 1
-            keyframe_change_idx = np.unique(keyframe_change_idx)
-            keyframe_change_idx = np.insert(keyframe_change_idx, 0, 0)
-            keyframe_change_count = keyframe_change_idx[1:] - keyframe_change_idx[:-1]
-            keyframe_change_count = np.insert(keyframe_change_count, len(keyframe_change_count), len(keyframe_def_position[key]) - keyframe_change_idx[-1])
-            keyframe_def_truth_position[key] = global_truth_position[key][keyframe_change_idx - 1]
-            R_KtoG_0 = np.array(R.from_euler('xyz', keyframe_def_orientation[key][0]).as_matrix())
-            keyframe_def_truth_position[key][0] = global_truth_position[key][0] - R_KtoG_0 @ keyframe_estimate_position[key][0]
-            keyframe_def_truth_position[key] = np.repeat(keyframe_def_truth_position[key], keyframe_change_count, axis=0)
-            keyframe_def_truth_orientation[key] = global_truth_orientation[key][keyframe_change_idx - 1]
-            keyframe_def_truth_orientation[key][0] = global_truth_orientation[key][0] - keyframe_estimate_orientation[key][0]
-            keyframe_def_truth_orientation[key] = np.repeat(keyframe_def_truth_orientation[key], keyframe_change_count, axis=0)
-
-            # Translate and rotate truth into keyframe truth frame
-            keyframe_truth_position[key] = global_truth_position[key] - keyframe_def_truth_position[key]
-            temp = []
-            for i in range(len(keyframe_truth_position[key])):
-                R_KtoG = np.array(R.from_euler('xyz', keyframe_def_truth_orientation[key][i]).as_matrix())
-                temp.append(R_KtoG.T @ keyframe_truth_position[key][i])
-            keyframe_truth_position[key] = np.array(temp)
-            keyframe_truth_orientation[key] = global_truth_orientation[key] - keyframe_def_truth_orientation[key]
-
-            # Calculate errors between truth and estimates
-            keyframe_position_error[key] = keyframe_truth_position[key] - keyframe_estimate_position[key]
-            keyframe_orientation_error[key] = keyframe_truth_orientation[key] - keyframe_estimate_orientation[key]
-            keyframe_orientation_error[key] = (keyframe_orientation_error[key] + np.pi) % (2 * np.pi) - np.pi
 
 
         ### XY Global Position and Error ###
@@ -434,127 +316,6 @@ class DataPlotterNode(Node):
 
         plt.tight_layout()
         plt.savefig(global_error_filename)
-
-        ### Keyframe Position Plots ###
-
-        fig, axs = plt.subplots(6, len(global_truth_position.keys()), figsize=(16, 12))
-
-        if len(global_truth_position.keys()) == 1:
-            axs = np.expand_dims(axs, axis=1)
-
-        column_idx = 0
-        for key in self.global_truth_data.keys():
-
-            # X Position
-            axs[0, column_idx].plot(time[key], keyframe_truth_position[key][:, 0], color='blue', label='Truth')
-            axs[0, column_idx].plot(time[key], keyframe_estimate_position[key][:, 0], color='red', label='Estimate')
-            axs[0, column_idx].set_title(key)
-            axs[0, column_idx].grid()
-
-            # Y Position
-            axs[1, column_idx].plot(time[key], keyframe_truth_position[key][:, 1], color='blue')
-            axs[1, column_idx].plot(time[key], keyframe_estimate_position[key][:, 1], color='red')
-            axs[1, column_idx].grid()
-
-            # Z Position
-            axs[2, column_idx].plot(time[key], keyframe_truth_position[key][:, 2], color='blue')
-            axs[2, column_idx].plot(time[key], keyframe_estimate_position[key][:, 2], color='red')
-            axs[2, column_idx].grid()
-
-            # Pitch
-            axs[3, column_idx].plot(time[key], keyframe_truth_orientation[key][:, 0], color='blue')
-            axs[3, column_idx].plot(time[key], keyframe_estimate_orientation[key][:, 0], color='red')
-            axs[3, column_idx].grid()
-
-            # Roll
-            axs[4, column_idx].plot(time[key], keyframe_truth_orientation[key][:, 1], color='blue')
-            axs[4, column_idx].plot(time[key], keyframe_estimate_orientation[key][:, 1], color='red')
-            axs[4, column_idx].grid()
-
-            # Yaw
-            axs[5, column_idx].plot(time[key], keyframe_truth_orientation[key][:, 2], color='blue')
-            axs[5, column_idx].plot(time[key], keyframe_estimate_orientation[key][:, 2], color='red')
-            axs[5, column_idx].set_xlabel('Time (s)')
-            axs[5, column_idx].grid()
-
-            # Add ylabels to leftmost plots
-            if column_idx == 0:
-                axs[0, column_idx].set_ylabel('X - East (m)')
-                axs[1, column_idx].set_ylabel('Y - North (m)')
-                axs[2, column_idx].set_ylabel('Z - Up (m)')
-                axs[3, column_idx].set_ylabel('Roll  (rad)')
-                axs[4, column_idx].set_ylabel('Pitch  (rad)')
-                axs[5, column_idx].set_ylabel('Yaw  (rad)')
-                axs[0, column_idx].legend()
-
-            column_idx += 1
-
-        plt.tight_layout()
-        plt.savefig(keyframe_position_filename)
-
-
-        ### Keyframe Error Plots ###
-
-        fig, axs = plt.subplots(6, len(global_truth_position.keys()), figsize=(16, 12))
-
-        if len(global_truth_position.keys()) == 1:
-            axs = np.expand_dims(axs, axis=1)
-
-        column_idx = 0
-        for key in self.global_truth_data.keys():
-
-            # X Position
-            axs[0, column_idx].plot(time[key], keyframe_position_error[key][:, 0], color='red', label='Error')
-            axs[0, column_idx].plot(time[key], 2*keyframe_position_std[key][:, 0], color='blue', label='2 Sigma')
-            axs[0, column_idx].plot(time[key], -2*keyframe_position_std[key][:, 0], color='blue')
-            axs[0, column_idx].set_title(key)
-            axs[0, column_idx].grid()
-
-            # Y Position
-            axs[1, column_idx].plot(time[key], keyframe_position_error[key][:, 1], color='red')
-            axs[1, column_idx].plot(time[key], 2*keyframe_position_std[key][:, 1], color='blue')
-            axs[1, column_idx].plot(time[key], -2*keyframe_position_std[key][:, 1], color='blue')
-            axs[1, column_idx].grid()
-
-            # Z Position
-            axs[2, column_idx].plot(time[key], keyframe_position_error[key][:, 2], color='red')
-            axs[2, column_idx].plot(time[key], 2*keyframe_position_std[key][:, 2], color='blue')
-            axs[2, column_idx].plot(time[key], -2*keyframe_position_std[key][:, 2], color='blue')
-            axs[2, column_idx].grid()
-
-            # Pitch
-            axs[3, column_idx].plot(time[key], keyframe_orientation_error[key][:, 0], color='red')
-            axs[3, column_idx].plot(time[key], 2*keyframe_orientation_std[key][:, 0], color='blue')
-            axs[3, column_idx].plot(time[key], -2*keyframe_orientation_std[key][:, 0], color='blue')
-            axs[3, column_idx].grid()
-
-            # Roll
-            axs[4, column_idx].plot(time[key], keyframe_orientation_error[key][:, 1], color='red')
-            axs[4, column_idx].plot(time[key], 2*keyframe_orientation_std[key][:, 1], color='blue')
-            axs[4, column_idx].plot(time[key], -2*keyframe_orientation_std[key][:, 1], color='blue')
-            axs[4, column_idx].grid()
-
-            # Yaw
-            axs[5, column_idx].plot(time[key], keyframe_orientation_error[key][:, 2], color='red')
-            axs[5, column_idx].plot(time[key], 2*keyframe_orientation_std[key][:, 2], color='blue')
-            axs[5, column_idx].plot(time[key], -2*keyframe_orientation_std[key][:, 2], color='blue')
-            axs[5, column_idx].set_xlabel('Time (s)')
-            axs[5, column_idx].grid()
-
-            # Add ylabels to leftmost plots
-            if column_idx == 0:
-                axs[0, column_idx].set_ylabel('X - East Error (m)')
-                axs[1, column_idx].set_ylabel('Y - North Error (m)')
-                axs[2, column_idx].set_ylabel('Z - Up Error (m)')
-                axs[3, column_idx].set_ylabel('Roll Error (rad)')
-                axs[4, column_idx].set_ylabel('Pitch Error (rad)')
-                axs[5, column_idx].set_ylabel('Yaw Error (rad)')
-                axs[0, column_idx].legend()
-
-            column_idx += 1
-
-        plt.tight_layout()
-        plt.savefig(keyframe_error_filename)
 
         self.get_logger().info('Plots generated and data saved successfully!')
 

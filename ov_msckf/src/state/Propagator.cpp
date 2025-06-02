@@ -73,8 +73,8 @@ void Propagator::propagate_and_clone(std::shared_ptr<State> state, double timest
   // Q_summed = Phi_i*Q_summed*Phi_i^T + Q_i
   // After summing we can multiple the total phi to get the updated covariance
   // We will then add the noise to the IMU portion of the state
-  Eigen::MatrixXd Phi_summed = Eigen::MatrixXd::Identity(state->imu_intrinsic_size() + 21, state->imu_intrinsic_size() + 21);
-  Eigen::MatrixXd Qd_summed = Eigen::MatrixXd::Zero(state->imu_intrinsic_size() + 21, state->imu_intrinsic_size() + 21);
+  Eigen::MatrixXd Phi_summed = Eigen::MatrixXd::Identity(state->imu_intrinsic_size() + 15, state->imu_intrinsic_size() + 15);
+  Eigen::MatrixXd Qd_summed = Eigen::MatrixXd::Zero(state->imu_intrinsic_size() + 15, state->imu_intrinsic_size() + 15);
   double dt_summed = 0;
 
   // Loop through all IMU messages, and use them to move the state forward in time
@@ -198,7 +198,7 @@ bool Propagator::fast_state_propagate(std::shared_ptr<State> state, double times
     // State transition and noise matrix
     // TODO: should probably track the correlations with the IMU intrinsics if we are calibrating
     // TODO: currently this just does a quick discrete prediction using only the previous marg IMU uncertainty
-    Eigen::Matrix<double, 21, 21> F = Eigen::Matrix<double, 21, 21>::Zero();
+    Eigen::Matrix<double, 15, 15> F = Eigen::Matrix<double, 15, 15>::Zero();
     F.block(0, 0, 3, 3) = exp_so3(-w_hat * dt);
     F.block(0, 9, 3, 3).noalias() = -exp_so3(-w_hat * dt) * Jr_so3(-w_hat * dt) * dt;
     F.block(9, 9, 3, 3).setIdentity();
@@ -210,7 +210,7 @@ bool Propagator::fast_state_propagate(std::shared_ptr<State> state, double times
     F.block(3, 6, 3, 3) = Eigen::Matrix3d::Identity() * dt;
     F.block(3, 12, 3, 3) = -0.5 * R_Gtoi.transpose() * dt * dt;
     F.block(3, 3, 3, 3).setIdentity();
-    Eigen::Matrix<double, 21, 12> G = Eigen::Matrix<double, 21, 12>::Zero();
+    Eigen::Matrix<double, 15, 12> G = Eigen::Matrix<double, 15, 12>::Zero();
     G.block(0, 0, 3, 3) = -exp_so3(-w_hat * dt) * Jr_so3(-w_hat * dt) * dt;
     G.block(6, 3, 3, 3) = -R_Gtoi.transpose() * dt;
     G.block(3, 3, 3, 3) = -0.5 * R_Gtoi.transpose() * dt * dt;
@@ -220,7 +220,7 @@ bool Propagator::fast_state_propagate(std::shared_ptr<State> state, double times
     // Construct our discrete noise covariance matrix
     // Note that we need to convert our continuous time noises to discrete
     // Equations (129) amd (130) of Trawny tech report
-    Eigen::Matrix<double, 21, 21> Qd = Eigen::Matrix<double, 21, 21>::Zero();
+    Eigen::Matrix<double, 15, 15> Qd = Eigen::Matrix<double, 15, 15>::Zero();
     Eigen::Matrix<double, 12, 12> Qc = Eigen::Matrix<double, 12, 12>::Zero();
     Qc.block(0, 0, 3, 3) = _noises.sigma_w_2 / dt * Eigen::Matrix3d::Identity();
     Qc.block(3, 3, 3, 3) = _noises.sigma_a_2 / dt * Eigen::Matrix3d::Identity();
@@ -257,7 +257,7 @@ bool Propagator::fast_state_propagate(std::shared_ptr<State> state, double times
   // TODO: more properly do the covariance of the angular velocity here...
   // TODO: it should be dependent on the state bias, thus correlated with the pose..
   covariance.setZero();
-  Eigen::Matrix<double, 21, 21> Phi = Eigen::Matrix<double, 21, 21>::Identity();
+  Eigen::Matrix<double, 15, 15> Phi = Eigen::Matrix<double, 15, 15>::Identity();
   Phi.block(6, 6, 3, 3) = quat_2_Rot(q_Gtoi);
   Eigen::MatrixXd covariance_tmp = Phi * cache_state_covariance * Phi.transpose();
   covariance.block(0, 0, 9, 9) = covariance_tmp.block(0, 0, 9, 9);
@@ -436,26 +436,24 @@ void Propagator::predict_and_compute(std::shared_ptr<State> state, const ov_core
   }
 
   // Compute the new state mean value
-  Eigen::Vector4d new_q, new_keyframe_q;
-  Eigen::Vector3d new_v, new_p, new_keyframe_p;
+  Eigen::Vector4d new_q;
+  Eigen::Vector3d new_v, new_p;
   if (state->_options.integration_method == StateOptions::IntegrationMethod::ANALYTICAL) {
-    predict_mean_analytic(state, dt, w_hat_avg, a_hat_avg, new_q, new_v, new_p, new_keyframe_q, new_keyframe_p, Xi_sum);
+    predict_mean_analytic(state, dt, w_hat_avg, a_hat_avg, new_q, new_v, new_p, Xi_sum);
   } else if (state->_options.integration_method == StateOptions::IntegrationMethod::RK4) {
-    predict_mean_rk4(state, dt, w_hat1, a_hat1, w_hat2, a_hat2, new_q, new_v, new_p, new_keyframe_q, new_keyframe_p);
+    predict_mean_rk4(state, dt, w_hat1, a_hat1, w_hat2, a_hat2, new_q, new_v, new_p);
   } else {
-    predict_mean_discrete(state, dt, w_hat_avg, a_hat_avg, new_q, new_v, new_p, new_keyframe_q, new_keyframe_p);
+    predict_mean_discrete(state, dt, w_hat_avg, a_hat_avg, new_q, new_v, new_p);
   }
 
   // Allocate state transition and continuous-time noise Jacobian
-  F = Eigen::MatrixXd::Zero(state->imu_intrinsic_size() + 21, state->imu_intrinsic_size() + 21);
-  Eigen::MatrixXd G = Eigen::MatrixXd::Zero(state->imu_intrinsic_size() + 21, 12);
+  F = Eigen::MatrixXd::Zero(state->imu_intrinsic_size() + 15, state->imu_intrinsic_size() + 15);
+  Eigen::MatrixXd G = Eigen::MatrixXd::Zero(state->imu_intrinsic_size() + 15, 12);
   if (state->_options.integration_method == StateOptions::IntegrationMethod::RK4 ||
       state->_options.integration_method == StateOptions::IntegrationMethod::ANALYTICAL) {
-    compute_F_and_G_analytic(state, dt, w_hat_avg, a_hat_avg, w_uncorrected, a_uncorrected, new_q, new_v, new_p, new_keyframe_q,
-                             new_keyframe_p, Xi_sum, F, G);
+    compute_F_and_G_analytic(state, dt, w_hat_avg, a_hat_avg, w_uncorrected, a_uncorrected, new_q, new_v, new_p, Xi_sum, F, G);
   } else {
-    compute_F_and_G_discrete(state, dt, w_hat_avg, a_hat_avg, w_uncorrected, a_uncorrected, new_q, new_v, new_p, new_keyframe_q,
-                             new_keyframe_p, F, G);
+    compute_F_and_G_discrete(state, dt, w_hat_avg, a_hat_avg, w_uncorrected, a_uncorrected, new_q, new_v, new_p, F, G);
   }
 
   // Construct our discrete noise covariance matrix
@@ -468,31 +466,26 @@ void Propagator::predict_and_compute(std::shared_ptr<State> state, const ov_core
   Qc.block(9, 9, 3, 3) = std::pow(_noises.sigma_ab, 2) / dt * Eigen::Matrix3d::Identity();
 
   // Compute the noise injected into the state over the interval
-  Qd = Eigen::MatrixXd::Zero(state->imu_intrinsic_size() + 21, state->imu_intrinsic_size() + 21);
+  Qd = Eigen::MatrixXd::Zero(state->imu_intrinsic_size() + 15, state->imu_intrinsic_size() + 15);
   Qd = G * Qc * G.transpose();
   Qd = 0.5 * (Qd + Qd.transpose());
 
   // Now replace imu estimate and fej with propagated values
-  Eigen::Matrix<double, 23, 1> imu_x = state->_imu->value();
+  Eigen::Matrix<double, 16, 1> imu_x = state->_imu->value();
   imu_x.block(0, 0, 4, 1) = new_q;
   imu_x.block(4, 0, 3, 1) = new_p;
   imu_x.block(7, 0, 3, 1) = new_v;
-  imu_x.block(16, 0, 4, 1) = new_keyframe_q;
-  imu_x.block(20, 0, 3, 1) = new_keyframe_p;
   state->_imu->set_value(imu_x);
   state->_imu->set_fej(imu_x);
 }
 
 void Propagator::predict_mean_discrete(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
-                                      Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p,
-                                      Eigen::Vector4d &new_keyframe_q, Eigen::Vector3d &new_keyframe_p) {
-  Eigen::Matrix3d R_GtoK = state->_keyframe_def->Rot();
+                                       Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p) {
 
   // Pre-compute things
   double w_norm = w_hat.norm();
   Eigen::Matrix4d I_4x4 = Eigen::Matrix4d::Identity();
   Eigen::Matrix3d R_Gtoi = state->_imu->Rot();
-  Eigen::Matrix3d R_Ktoi = state->_imu->keyframe_Rot();
 
   // Orientation: Equation (101) and (103) and of Trawny indirect TR
   Eigen::Matrix<double, 4, 4> bigO;
@@ -509,19 +502,11 @@ void Propagator::predict_mean_discrete(std::shared_ptr<State> state, double dt, 
 
   // Position: just velocity times dt, with the acceleration integrated twice
   new_p = state->_imu->pos() + state->_imu->vel() * dt + 0.5 * R_Gtoi.transpose() * a_hat * dt * dt - 0.5 * _gravity * dt * dt;
-
-  // Keyframe orientation: Same as orientation, but with keyframe orientation rather than global
-  new_keyframe_q = quatnorm(bigO * state->_imu->keyframe_quat());
-
-  // Keyframe position: Same as global position, but rotation and gavity are rotated into keyframe first
-  new_keyframe_p = state->_imu->keyframe_pos() + R_GtoK * state->_imu->vel() * dt + 0.5 * R_Ktoi.transpose() * a_hat * dt * dt -
-    0.5 * R_GtoK * _gravity * dt * dt;
 }
 
 void Propagator::predict_mean_rk4(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat1, const Eigen::Vector3d &a_hat1,
                                   const Eigen::Vector3d &w_hat2, const Eigen::Vector3d &a_hat2, Eigen::Vector4d &new_q,
-                                  Eigen::Vector3d &new_v, Eigen::Vector3d &new_p, Eigen::Vector4d &new_keyframe_q,
-                                  Eigen::Vector3d &new_keyframe_p) {
+                                  Eigen::Vector3d &new_v, Eigen::Vector3d &new_p) {
 
   // Pre-compute things
   Eigen::Vector3d w_hat = w_hat1;
@@ -598,9 +583,6 @@ void Propagator::predict_mean_rk4(std::shared_ptr<State> state, double dt, const
   new_q = quat_multiply(dq, q_0);
   new_p = p_0 + (1.0 / 6.0) * k1_p + (1.0 / 3.0) * k2_p + (1.0 / 3.0) * k3_p + (1.0 / 6.0) * k4_p;
   new_v = v_0 + (1.0 / 6.0) * k1_v + (1.0 / 3.0) * k2_v + (1.0 / 3.0) * k3_v + (1.0 / 6.0) * k4_v;
-  // MAGICC TODO: add the keyframe_q and keyframe_p propagation equations here
-  new_keyframe_q.setZero();
-  new_keyframe_p.setZero();
 }
 
 void Propagator::compute_Xi_sum(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
@@ -684,7 +666,6 @@ void Propagator::compute_Xi_sum(std::shared_ptr<State> state, double dt, const E
 
 void Propagator::predict_mean_analytic(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat, const Eigen::Vector3d &a_hat,
                                        Eigen::Vector4d &new_q, Eigen::Vector3d &new_v, Eigen::Vector3d &new_p,
-                                       Eigen::Vector4d &new_keyframe_q, Eigen::Vector3d &new_keyframe_p,
                                        Eigen::Matrix<double, 3, 18> &Xi_sum) {
 
   // Pre-compute things
@@ -697,19 +678,13 @@ void Propagator::predict_mean_analytic(std::shared_ptr<State> state, double dt, 
   new_q = ov_core::quat_multiply(q_ktok1, state->_imu->quat());
   new_v = state->_imu->vel() + R_Gtok.transpose() * Xi_1 * a_hat - _gravity * dt;
   new_p = state->_imu->pos() + state->_imu->vel() * dt + R_Gtok.transpose() * Xi_2 * a_hat - 0.5 * _gravity * dt * dt;
-  // MAGICC TODO: add the keyframe_q and keyframe_p propagation equations here
-  new_keyframe_q.setZero();
-  new_keyframe_p.setZero();
 }
 
 void Propagator::compute_F_and_G_analytic(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat,
                                           const Eigen::Vector3d &a_hat, const Eigen::Vector3d &w_uncorrected,
                                           const Eigen::Vector3d &a_uncorrected, const Eigen::Vector4d &new_q, const Eigen::Vector3d &new_v,
-                                          const Eigen::Vector3d &new_p, const Eigen::Vector4d &new_keyframe_q,
-                                          const Eigen::Vector3d &new_keyframe_p, const Eigen::Matrix<double, 3, 18> &Xi_sum,
-                                          Eigen::MatrixXd &F, Eigen::MatrixXd &G) {
-
-  // MAGICC TODO: Implement expanded F and G matrices
+                                          const Eigen::Vector3d &new_p, const Eigen::Matrix<double, 3, 18> &Xi_sum, Eigen::MatrixXd &F,
+                                          Eigen::MatrixXd &G) {
 
   // Get the locations of each entry of the imu state
   int local_size = 0;
@@ -723,10 +698,6 @@ void Propagator::compute_F_and_G_analytic(std::shared_ptr<State> state, double d
   local_size += state->_imu->bg()->size();
   int ba_id = local_size;
   local_size += state->_imu->ba()->size();
-  int keyframe_th_id = local_size;
-  local_size += state->_imu->keyframe_q()->size();
-  int keyframe_p_id = local_size;
-  local_size += state->_imu->keyframe_p()->size();
 
   // If we are doing calibration, we can define their "local" id in the state transition
   int Dw_id = -1;
@@ -859,9 +830,7 @@ void Propagator::compute_F_and_G_analytic(std::shared_ptr<State> state, double d
 void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double dt, const Eigen::Vector3d &w_hat,
                                           const Eigen::Vector3d &a_hat, const Eigen::Vector3d &w_uncorrected,
                                           const Eigen::Vector3d &a_uncorrected, const Eigen::Vector4d &new_q, const Eigen::Vector3d &new_v,
-                                          const Eigen::Vector3d &new_p, const Eigen::Vector4d &new_keyframe_q,
-                                          const Eigen::Vector3d &new_keyframe_p, Eigen::MatrixXd &F, Eigen::MatrixXd &G) {
-  Eigen::Matrix3d R_GtoK = state->_keyframe_def->Rot();
+                                          const Eigen::Vector3d &new_p, Eigen::MatrixXd &F, Eigen::MatrixXd &G) {
 
   // Get the locations of each entry of the imu state
   int local_size = 0;
@@ -875,10 +844,6 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
   local_size += state->_imu->bg()->size();
   int ba_id = local_size;
   local_size += state->_imu->ba()->size();
-  int keyframe_th_id = local_size;
-  local_size += state->_imu->keyframe_q()->size();
-  int keyframe_p_id = local_size;
-  local_size += state->_imu->keyframe_p()->size();
 
   // If we are doing calibration, we can define their "local" id in the state transition
   int Dw_id = -1;
@@ -909,14 +874,10 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
   Eigen::Matrix3d R_k = state->_imu->Rot();
   Eigen::Vector3d v_k = state->_imu->vel();
   Eigen::Vector3d p_k = state->_imu->pos();
-  Eigen::Matrix3d keyframe_R_k = state->_imu->keyframe_Rot();
-  Eigen::Vector3d keyframe_p_k = state->_imu->keyframe_pos();
   if (state->_options.do_fej) {
     R_k = state->_imu->Rot_fej();
     v_k = state->_imu->vel_fej();
     p_k = state->_imu->pos_fej();
-    keyframe_R_k = state->_imu->keyframe_Rot_fej();
-    keyframe_p_k = state->_imu->keyframe_pos_fej();
   }
   Eigen::Matrix3d dR_ktok1 = quat_2_Rot(new_q) * R_k.transpose();
 
@@ -953,17 +914,6 @@ void Propagator::compute_F_and_G_discrete(std::shared_ptr<State> state, double d
 
   // for ba
   F.block(ba_id, ba_id, 3, 3).setIdentity();
-
-  // for keyframe theta
-  F.block(keyframe_th_id, bg_id, 3, 3) = -dR_ktok1 * Jr_ktok1 * dt * R_wtoI * Dw;
-  F.block(keyframe_th_id, keyframe_th_id, 3, 3) = dR_ktok1;
-
-  // for keyframe position
-  F.block(keyframe_p_id, v_id, 3, 3) = R_GtoK * Eigen::Matrix3d::Identity() * dt;
-  F.block(keyframe_p_id, ba_id, 3, 3) = -0.5 * R_k.transpose() * dt * dt * R_atoI * Da;
-  F.block(keyframe_p_id, keyframe_th_id, 3, 3) = -skew_x(new_keyframe_p - keyframe_p_k - R_GtoK * v_k * dt + 0.5 * _gravity * dt * dt)
-    * R_k.transpose();
-  F.block(keyframe_p_id, keyframe_p_id, 3, 3).setIdentity();
 
   // begin to add the state transition matrix for the omega intrinsics Dw part
   if (Dw_id != -1) {
