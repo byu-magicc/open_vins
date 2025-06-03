@@ -202,6 +202,11 @@ void ROS2Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> pars
   } else {
     // Now we should add any non-stereo callbacks here
     for (int i = 0; i < _app->get_params().state_options.num_cameras; i++) {
+      bool compressed;
+      _node->declare_parameter<bool>("topic_camera_compressed" + std::to_string(i), false);
+      _node->get_parameter("topic_camera_compressed" + std::to_string(i), compressed);
+      parser->parse_external("relative_config_imucam", "cam" + std::to_string(i), "compressed", compressed);
+
       // read in the topic
       std::string cam_topic;
       _node->declare_parameter<std::string>("topic_camera" + std::to_string(i), "/cam" + std::to_string(i) + "/image_raw");
@@ -210,10 +215,17 @@ void ROS2Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> pars
       // create subscriber
       // auto sub = _node->create_subscription<sensor_msgs::msg::Image>(
       //    cam_topic, rclcpp::SensorDataQoS(), std::bind(&ROS2Visualizer::callback_monocular, this, std::placeholders::_1, i));
-      auto sub = _node->create_subscription<sensor_msgs::msg::Image>(
+      if (!compressed) {
+        auto sub = _node->create_subscription<sensor_msgs::msg::Image>(
           cam_topic, 10, [this, i](const sensor_msgs::msg::Image::SharedPtr msg0) { callback_monocular(msg0, i); });
-      subs_cam.push_back(sub);
-      PRINT_INFO("subscribing to cam (mono): %s\n", cam_topic.c_str());
+        subs_cam.push_back(sub);
+        PRINT_INFO("subscribing to cam (mono): %s\n", cam_topic.c_str());
+      } else {
+        auto sub_compressed = _node->create_subscription<sensor_msgs::msg::CompressedImage>(
+          cam_topic, 10, [this, i](const sensor_msgs::msg::CompressedImage::SharedPtr msg0) { callback_monocular(msg0, i); });
+        subs_cam_compressed.push_back(sub_compressed);
+        PRINT_INFO("subscribing to cam (mono, compressed): %s\n", cam_topic.c_str());
+      }
     }
   }
 }
@@ -532,6 +544,25 @@ void ROS2Visualizer::callback_monocular(const sensor_msgs::msg::Image::SharedPtr
   std::lock_guard<std::mutex> lck(camera_queue_mtx);
   camera_queue.push_back(message);
   std::sort(camera_queue.begin(), camera_queue.end());
+}
+
+void ROS2Visualizer::callback_monocular(const sensor_msgs::msg::CompressedImage::SharedPtr msg0, int cam_id0) {
+  cv::Mat cv_image = cv::imdecode(cv::Mat(msg0->data), cv::IMREAD_UNCHANGED);
+  if (cv_image.empty()) {
+    PRINT_WARNING("Failed to decode compressed image");
+    return;
+  }
+
+  sensor_msgs::msg::Image::SharedPtr converted_msg = std::make_shared<sensor_msgs::msg::Image>();
+  converted_msg->header = msg0->header;
+  converted_msg->height = cv_image.rows;
+  converted_msg->width = cv_image.cols;
+  converted_msg->encoding = sensor_msgs::image_encodings::BGR8;
+  converted_msg->is_bigendian = false;
+  converted_msg->step = cv_image.cols * cv_image.elemSize();
+  converted_msg->data.assign(cv_image.datastart, cv_image.dataend);
+
+  callback_monocular(converted_msg, cam_id0);
 }
 
 void ROS2Visualizer::callback_stereo(const sensor_msgs::msg::Image::ConstSharedPtr msg0, const sensor_msgs::msg::Image::ConstSharedPtr msg1,

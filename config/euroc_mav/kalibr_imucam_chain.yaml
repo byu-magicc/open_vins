@@ -13,6 +13,7 @@ cam0:
   intrinsics: [458.654, 457.296, 367.215, 248.375] #fu, fv, cu, cv
   resolution: [752, 480]
   rostopic: /cam0/image_raw
+  compressed: false
 cam1:
   T_imu_cam: #rotation from camera to IMU R_CtoI, position of camera in IMU p_CinI
     - [0.0125552670891, -0.999755099723, 0.0182237714554, -0.0198435579556]
@@ -26,3 +27,4 @@ cam1:
   intrinsics: [457.587, 456.134, 379.999, 255.238] #fu, fv, cu, cv
   resolution: [752, 480]
   rostopic: /cam1/image_raw
+  compressed: false
