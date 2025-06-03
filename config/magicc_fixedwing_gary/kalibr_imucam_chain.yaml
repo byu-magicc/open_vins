@@ -13,3 +13,4 @@ cam0:
   intrinsics: [930.760, 903.352, 313.063, 300.074] #fu, fv, cu, cv
   resolution: [640, 480]
   rostopic: /camera/image_color/compressed
+  compressed: true
