@@ -114,10 +114,10 @@ public:
   void callback_inertial(const sensor_msgs::msg::Imu::SharedPtr msg);
 
   /// Callback for monocular cameras information
-  void callback_monocular(const sensor_msgs::msg::Image::SharedPtr msg0, int cam_id0);
+  void callback_monocular(const sensor_msgs::msg::Image::SharedPtr msg0, int cam_id0, int camera_time_offset);
 
   /// Compressed version of callback_monocular
-  void callback_monocular(const sensor_msgs::msg::CompressedImage::SharedPtr msg0, int cam_id0);
+  void callback_monocular(const sensor_msgs::msg::CompressedImage::SharedPtr msg0, int cam_id0, int camera_time_offset);
 
   /// Callback for synchronized stereo camera information
   void callback_stereo(const sensor_msgs::msg::Image::ConstSharedPtr msg0, const sensor_msgs::msg::Image::ConstSharedPtr msg1, int cam_id0,
