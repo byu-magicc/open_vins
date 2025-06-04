@@ -14,3 +14,4 @@ cam0:
   resolution: [640, 480]
   rostopic: /camera/image_color/compressed
   compressed: true
+  time_offset: 346540

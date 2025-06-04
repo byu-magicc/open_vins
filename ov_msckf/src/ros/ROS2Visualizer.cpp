@@ -202,10 +202,18 @@ void ROS2Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> pars
   } else {
     // Now we should add any non-stereo callbacks here
     for (int i = 0; i < _app->get_params().state_options.num_cameras; i++) {
+      // get param specifying if images are compressed or not
       bool compressed;
       _node->declare_parameter<bool>("topic_camera_compressed" + std::to_string(i), false);
       _node->get_parameter("topic_camera_compressed" + std::to_string(i), compressed);
       parser->parse_external("relative_config_imucam", "cam" + std::to_string(i), "compressed", compressed);
+
+      // get time offset for camera
+      int camera_time_offset;
+      _node->declare_parameter<int>("topic_camera_time_offset" + std::to_string(i), 0);
+      _node->get_parameter("topic_camera_time_offset" + std::to_string(i), camera_time_offset);
+      parser->parse_external("relative_config_imucam", "cam" + std::to_string(i), "time_offset",
+                          camera_time_offset);
 
       // read in the topic
       std::string cam_topic;
@@ -217,12 +225,14 @@ void ROS2Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> pars
       //    cam_topic, rclcpp::SensorDataQoS(), std::bind(&ROS2Visualizer::callback_monocular, this, std::placeholders::_1, i));
       if (!compressed) {
         auto sub = _node->create_subscription<sensor_msgs::msg::Image>(
-          cam_topic, 10, [this, i](const sensor_msgs::msg::Image::SharedPtr msg0) { callback_monocular(msg0, i); });
+          cam_topic, 10, [this, i, camera_time_offset](const sensor_msgs::msg::Image::SharedPtr msg0)
+          { callback_monocular(msg0, i, camera_time_offset); });
         subs_cam.push_back(sub);
         PRINT_INFO("subscribing to cam (mono): %s\n", cam_topic.c_str());
       } else {
         auto sub_compressed = _node->create_subscription<sensor_msgs::msg::CompressedImage>(
-          cam_topic, 10, [this, i](const sensor_msgs::msg::CompressedImage::SharedPtr msg0) { callback_monocular(msg0, i); });
+          cam_topic, 10, [this, i, camera_time_offset](const sensor_msgs::msg::CompressedImage::SharedPtr msg0) 
+          { callback_monocular(msg0, i, camera_time_offset); });
         subs_cam_compressed.push_back(sub_compressed);
         PRINT_INFO("subscribing to cam (mono, compressed): %s\n", cam_topic.c_str());
       }
@@ -507,7 +517,9 @@ void ROS2Visualizer::callback_inertial(const sensor_msgs::msg::Imu::SharedPtr ms
   }
 }
 
-void ROS2Visualizer::callback_monocular(const sensor_msgs::msg::Image::SharedPtr msg0, int cam_id0) {
+void ROS2Visualizer::callback_monocular(const sensor_msgs::msg::Image::SharedPtr msg0, int cam_id0, int camera_time_offset) {
+  // HACK: Gary's data has bad timestamps between IMU and camera, so I correct it here
+  msg0->header.stamp.sec += camera_time_offset;
 
   // Check if we should drop this image
   double timestamp = msg0->header.stamp.sec + msg0->header.stamp.nanosec * 1e-9;
@@ -546,7 +558,7 @@ void ROS2Visualizer::callback_monocular(const sensor_msgs::msg::Image::SharedPtr
   std::sort(camera_queue.begin(), camera_queue.end());
 }
 
-void ROS2Visualizer::callback_monocular(const sensor_msgs::msg::CompressedImage::SharedPtr msg0, int cam_id0) {
+void ROS2Visualizer::callback_monocular(const sensor_msgs::msg::CompressedImage::SharedPtr msg0, int cam_id0, int camera_time_offset) {
   cv::Mat cv_image = cv::imdecode(cv::Mat(msg0->data), cv::IMREAD_UNCHANGED);
   if (cv_image.empty()) {
     PRINT_WARNING("Failed to decode compressed image");
@@ -562,7 +574,7 @@ void ROS2Visualizer::callback_monocular(const sensor_msgs::msg::CompressedImage:
   converted_msg->step = cv_image.cols * cv_image.elemSize();
   converted_msg->data.assign(cv_image.datastart, cv_image.dataend);
 
-  callback_monocular(converted_msg, cam_id0);
+  callback_monocular(converted_msg, cam_id0, camera_time_offset);
 }
 
 void ROS2Visualizer::callback_stereo(const sensor_msgs::msg::Image::ConstSharedPtr msg0, const sensor_msgs::msg::Image::ConstSharedPtr msg1,
