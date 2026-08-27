@@ -13,10 +13,10 @@ class State;
 /**
  * @ brief Applied global measurements to the state
  *
- * This class is responsible for applying all forms of global measurements to the state. For GPS data from
- * the multi-agent backend, we use the associated vehicle transformation to calculate the transformed measurement
- * and uncertainty for the local vehicle. The IMU clones are removed from the state after a global measurement is applied
- * to avoid camera measurements attempting to triangluate features across a jump in estimated position.
+ * This class is responsible for applying global measurements to the state.
+ *
+ * The IMU clones are removed from the state after a global measurement is applied to avoid
+ * camera measurements attempting to triangluate features across a jump in estimated position.
  */
 class UpdaterGlobal {
 public:

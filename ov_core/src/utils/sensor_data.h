@@ -96,12 +96,6 @@ struct GPSData {
   /// Covariance of the global measurement
   Eigen::Matrix<double, 3, 3> cov_z_global;
 
-  /// Transform from vehicle receiving the global measurement to current vehicle
-  Eigen::Matrix<double, 3, 1> T_V1toV2;
-
-  /// Covariance of the vehicle transformation
-  Eigen::Matrix<double, 3, 3> cov_T_V1toV2;
-
   /// Sort function to allow for using of STL containers
   bool operator<(const GPSData &other) const { return timestamp < other.timestamp; }
 };

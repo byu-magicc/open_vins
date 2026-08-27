@@ -17,23 +17,9 @@ void UpdaterGlobal::update(std::shared_ptr<State> state) {
   for (auto const &gps : gps_data) {
     std::shared_ptr<ov_type::PoseJPL> pose_imu = state->_imu->pose();
 
-    // Calculate the measurement residual
-    Eigen::Matrix<double, 3, 1> res = gps.z_global - (pose_imu->pos() - gps.T_V1toV2);
+    Eigen::Matrix<double, 3, 1> res = gps.z_global - pose_imu->pos();
 
-    // Calculate the measurement Jacobians
-    Eigen::Matrix<double, 3, 3> H = Eigen::Matrix<double, 3, 3>::Identity();
-    Eigen::Matrix<double, 3, 6> F = Eigen::Matrix<double, 3, 6>::Zero();
-    F.block(0, 0, 3, 3) = -Eigen::Matrix<double, 3, 3>::Identity();
-    F.block(0, 3, 3, 3) = -Eigen::Matrix<double, 3, 3>::Identity();
-
-    // Calculate the measurement covariance
-    Eigen::Matrix<double, 6, 6> Sigma_z = Eigen::Matrix<double, 6, 6>::Zero();
-    Sigma_z.block(0, 0, 3, 3) = gps.cov_z_global;
-    Sigma_z.block(3, 3, 3, 3) = gps.cov_T_V1toV2;
-    Eigen::Matrix<double, 3, 3> R = F * Sigma_z * F.transpose();
-
-    // Perform the EKF update
-    StateHelper::EKFUpdate(state, {pose_imu->p()}, H, res, R);
+    StateHelper::EKFUpdate(state, {pose_imu->p()}, Eigen::Matrix<double, 3, 3>::Identity(), res, gps.cov_z_global);
   }
 
   // Clear out old/invalid data
@@ -41,7 +27,7 @@ void UpdaterGlobal::update(std::shared_ptr<State> state) {
     gps_data.clear();
 
     // Remove all clones
-    for (auto& clone : state->_clones_IMU) {
+    for (auto &clone : state->_clones_IMU) {
       StateHelper::marginalize(state, clone.second);
     }
     state->_clones_IMU.clear();
