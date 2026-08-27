@@ -39,14 +39,6 @@
 
 using namespace ov_msckf;
 
-std::shared_ptr<Simulator> sim;
-std::shared_ptr<VioManager> sys;
-#if ROS_AVAILABLE == 1
-std::shared_ptr<ROS1Visualizer> viz;
-#elif ROS_AVAILABLE == 2
-std::shared_ptr<ROS2Visualizer> viz;
-#endif
-
 // Define the function to be called when ctrl-c (SIGINT) is sent to process
 void signal_callback_handler(int signum) { std::exit(signum); }
 
@@ -94,12 +86,12 @@ int main(int argc, char **argv) {
   params.num_opencv_threads = 0; // for repeatability
   params.use_multi_threading_pubs = false;
   params.use_multi_threading_subs = false;
-  sim = std::make_shared<Simulator>(params);
-  sys = std::make_shared<VioManager>(params);
+  auto sim = std::make_shared<Simulator>(params);
+  auto sys = std::make_shared<VioManager>(params);
 #if ROS_AVAILABLE == 1
-  viz = std::make_shared<ROS1Visualizer>(nh, sys, sim);
+  auto viz = std::make_shared<ROS1Visualizer>(nh, sys, sim);
 #elif ROS_AVAILABLE == 2
-  viz = std::make_shared<ROS2Visualizer>(node, sys, sim);
+  auto viz = std::make_shared<ROS2Visualizer>(node, sys, sim);
 #endif
 
   // Ensure we read in all parameters required
@@ -180,9 +172,19 @@ int main(int argc, char **argv) {
   // Final visualization
 #if ROS_AVAILABLE == 1
   viz->visualize_final();
+  viz.reset();
+  sys.reset();
+  sim.reset();
+  parser.reset();
+  nh.reset();
   ros::shutdown();
 #elif ROS_AVAILABLE == 2
   viz->visualize_final();
+  viz.reset();
+  sys.reset();
+  sim.reset();
+  parser.reset();
+  node.reset();
   rclcpp::shutdown();
 #endif
 
