@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.12)
 project(ov_core)
 
 # Include libraries (if we don't have opencv 4, then fallback to opencv 3)
@@ -20,18 +20,16 @@ else ()
     add_definitions(-DENABLE_ARUCO_TAGS=1)
 endif ()
 
-# check if we have our python libs files (will search for python3 then python2 installs)
-# sudo apt-get install python-matplotlib python-numpy python-dev
-# https://cmake.org/cmake/help/v3.10/module/FindPythonLibs.html
-find_package(PythonLibs QUIET)
+# Check if we have our Python development files
+find_package(Python3 COMPONENTS Development QUIET)
 option(DISABLE_MATPLOTLIB "Disable or enable matplotlib plot scripts in ov_eval" OFF)
-if (PYTHONLIBS_FOUND AND NOT DISABLE_MATPLOTLIB)
+if (Python3_Development_FOUND AND NOT DISABLE_MATPLOTLIB)
     add_definitions(-DHAVE_PYTHONLIBS=1)
-    message(STATUS "PYTHON VERSION: " ${PYTHONLIBS_VERSION_STRING})
-    message(STATUS "PYTHON INCLUDE: " ${PYTHON_INCLUDE_DIRS})
-    message(STATUS "PYTHON LIBRARIES: " ${PYTHON_LIBRARIES})
-    include_directories(${PYTHON_INCLUDE_DIRS})
-    list(APPEND thirdparty_libraries ${PYTHON_LIBRARIES})
+    message(STATUS "PYTHON VERSION: " ${Python3_VERSION})
+    message(STATUS "PYTHON INCLUDE: " ${Python3_INCLUDE_DIRS})
+    message(STATUS "PYTHON LIBRARIES: " ${Python3_LIBRARIES})
+    include_directories(${Python3_INCLUDE_DIRS})
+    list(APPEND thirdparty_libraries ${Python3_LIBRARIES})
 endif ()
 
 # We need c++14 for ROS2, thus just require it for everybody
@@ -61,7 +59,6 @@ else ()
     message(STATUS "No ROS versions found, building ROS1.cmake")
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ROS1.cmake)
 endif ()
-
 
 
 

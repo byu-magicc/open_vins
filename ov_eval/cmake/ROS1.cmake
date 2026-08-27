@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.12)
 
 # Find ROS build system
 find_package(catkin QUIET COMPONENTS roscpp rospy geometry_msgs nav_msgs sensor_msgs ov_core)
@@ -26,7 +26,7 @@ include_directories(
         src
         ${EIGEN3_INCLUDE_DIR}
         ${Boost_INCLUDE_DIRS}
-        ${PYTHON_INCLUDE_DIRS}
+        ${Python3_INCLUDE_DIRS}
         ${catkin_INCLUDE_DIRS}
 )
 
@@ -191,5 +191,4 @@ install(TARGETS plot_trajectories
         LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
         RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
-
 

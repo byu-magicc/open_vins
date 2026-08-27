@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.12)
 
 # Find ROS build system
 find_package(ament_cmake REQUIRED)
@@ -17,7 +17,7 @@ include_directories(
         src
         ${EIGEN3_INCLUDE_DIR}
         ${Boost_INCLUDE_DIRS}
-        ${PYTHON_INCLUDE_DIRS}
+        ${Python3_INCLUDE_DIRS}
 )
 
 # Set link libraries used by all binaries

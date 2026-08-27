@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.12)
 
 # Find ros dependencies
 find_package(ament_cmake REQUIRED)
@@ -84,4 +84,3 @@ install(DIRECTORY launch/ DESTINATION share/${PROJECT_NAME}/launch/)
 
 # finally define this as the package
 ament_package()
-

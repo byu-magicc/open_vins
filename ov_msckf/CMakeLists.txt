@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.12)
 project(ov_msckf)
 
 # Include libraries (if we don't have opencv 4, then fallback to opencv 3)
@@ -48,6 +48,5 @@ else ()
     message(STATUS "No ROS versions found, building ROS1.cmake")
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ROS1.cmake)
 endif ()
-
 
 

@@ -311,7 +311,7 @@ void ResultTrajectory::calculate_error(Statistics &posx, Statistics &posy, Stati
         ov_core::quat_multiply(gt_poses_aignedtoEST.at(i).block(3, 0, 4, 1), ov_core::Inv(est_poses.at(i).block(3, 0, 4, 1)));
     Eigen::Vector3d errori_local = 2 * e_q.block(0, 0, 3, 1);
     Eigen::Vector3d errori_global = ov_core::quat_2_Rot(est_poses.at(i).block(3, 0, 4, 1)).transpose() * errori_local;
-    Eigen::Matrix3d cov_global;
+    Eigen::Matrix3d cov_global = Eigen::Matrix3d::Zero();
     if (est_times.size() == est_covori.size()) {
       cov_global = ov_core::quat_2_Rot(est_poses.at(i).block(3, 0, 4, 1)).transpose() * est_covori.at(i) *
                    ov_core::quat_2_Rot(est_poses.at(i).block(3, 0, 4, 1));
@@ -339,7 +339,7 @@ void ResultTrajectory::calculate_error(Statistics &posx, Statistics &posy, Stati
     Eigen::Matrix<double, 3, 3> H_xyz2rpy = Eigen::Matrix<double, 3, 3>::Identity();
     H_xyz2rpy.block(0, 1, 3, 1) = ov_core::rot_x(-ypr_est_ItoG(0)) * H_xyz2rpy.block(0, 1, 3, 1);
     H_xyz2rpy.block(0, 2, 3, 1) = ov_core::rot_x(-ypr_est_ItoG(0)) * ov_core::rot_y(-ypr_est_ItoG(1)) * H_xyz2rpy.block(0, 2, 3, 1);
-    Eigen::Matrix3d cov_rpy;
+    Eigen::Matrix3d cov_rpy = Eigen::Matrix3d::Zero();
     if (est_times.size() == est_covori.size()) {
       cov_rpy = H_xyz2rpy.inverse() * est_covori.at(i) * H_xyz2rpy.inverse().transpose();
     }

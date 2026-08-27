@@ -123,13 +123,6 @@ private:
 
   _interpreter() {
 
-    // optional but recommended
-#if PY_MAJOR_VERSION >= 3
-    wchar_t name[] = L"plotting";
-#else
-    char name[] = "plotting";
-#endif
-    Py_SetProgramName(name);
     Py_Initialize();
 
 #ifndef WITHOUT_NUMPY
