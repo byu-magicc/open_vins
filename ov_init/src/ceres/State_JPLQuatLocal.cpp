@@ -48,9 +48,31 @@ bool State_JPLQuatLocal::Plus(const double *x, const double *delta, double *x_pl
   return true;
 }
 
-bool State_JPLQuatLocal::ComputeJacobian(const double *x, double *jacobian) const {
+bool State_JPLQuatLocal::PlusJacobian(const double *x, double *jacobian) const {
   Eigen::Map<Eigen::Matrix<double, 4, 3, Eigen::RowMajor>> j(jacobian);
   j.topRows<3>().setIdentity();
   j.bottomRows<1>().setZero();
+  return true;
+}
+
+bool State_JPLQuatLocal::Minus(const double *y, const double *x, double *y_minus_x) const {
+  Eigen::Map<const Eigen::Vector4d> q_y(y);
+  Eigen::Map<const Eigen::Vector4d> q_x(x);
+  Eigen::Map<Eigen::Vector3d> delta(y_minus_x);
+
+  const Eigen::Vector4d d_q = ov_core::quat_multiply(q_y, ov_core::Inv(q_x));
+  const double sin_half_theta = d_q.head<3>().norm();
+  if (sin_half_theta < 1e-8) {
+    delta = 2.0 * d_q.head<3>();
+  } else {
+    delta = 2.0 * std::atan2(sin_half_theta, d_q(3)) * d_q.head<3>() / sin_half_theta;
+  }
+  return true;
+}
+
+bool State_JPLQuatLocal::MinusJacobian(const double *x, double *jacobian) const {
+  Eigen::Map<Eigen::Matrix<double, 3, 4, Eigen::RowMajor>> j(jacobian);
+  j.leftCols<3>().setIdentity();
+  j.rightCols<1>().setZero();
   return true;
 }

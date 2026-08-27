@@ -53,7 +53,7 @@
 #include <Eigen/Eigen>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/filesystem.hpp>
-#include <cv_bridge/cv_bridge.h>
+#include <cv_bridge/cv_bridge.hpp>
 
 namespace ov_core {
 class YamlParser;
