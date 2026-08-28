@@ -5,7 +5,7 @@ podman build -t open_vins .
 mkdir -p plots
 podman run --rm -it \
   --volume "$(pwd)/plots:/open_vins_ws/plots" \
-  --workdir /open_vins_ws/plots \
+  --workdir /open_vins_ws \
   open_vins \
   ros2 launch ov_msckf multi_agent_mav_sim.launch.py plotting_enable:=true
 ```

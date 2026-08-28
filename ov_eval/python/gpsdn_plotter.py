@@ -124,13 +124,18 @@ class DataPlotterNode(Node):
             global_orientation_std[key] = np.array(global_orientation_std[key])
 
         # Get filenames for saving plots and data
+        plots_directory = 'plots'
+        os.makedirs(plots_directory, exist_ok=True)
         counter = 0
-        while os.path.exists(f'data_{counter}.npz'):
+        while os.path.exists(os.path.join(plots_directory, f'data_{counter}.npz')):
             counter += 1
-        data_filename = f'data_{counter}.npz'
-        global_xy_position_and_error_filename = f'global_xy_position_and_error_{counter}.svg'
-        global_position_filename = f'global_position_{counter}.svg'
-        global_error_filename = f'global_error_{counter}.svg'
+        data_filename = os.path.join(plots_directory, f'data_{counter}.npz')
+        global_xy_position_and_error_filename = os.path.join(
+            plots_directory, f'global_xy_position_and_error_{counter}.svg')
+        global_position_filename = os.path.join(
+            plots_directory, f'global_position_{counter}.svg')
+        global_error_filename = os.path.join(
+            plots_directory, f'global_error_{counter}.svg')
 
         # Save all data to a .npz file
         data = {}
