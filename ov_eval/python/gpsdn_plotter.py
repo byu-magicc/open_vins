@@ -336,7 +336,7 @@ def main(args=None):
     node.get_logger().info('Generating plots and saving data...')
     node.plot_data()
     node.destroy_node()
-    rclpy.shutdown()
+    rclpy.try_shutdown()
 
 if __name__ == '__main__':
     main()
