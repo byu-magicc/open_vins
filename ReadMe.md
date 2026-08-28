@@ -1,3 +1,21 @@
+This fork of OpenVINS attempts to create a multi-agent GTSAM-based factor graph that mimics the single-agent performance of OpenVINS while allowing multi-agent cooperation. To use, build and run `Containerfile` with Podman or a similar program:
+
+```bash
+podman build -t open_vins .
+mkdir -p plots
+podman run --rm -it \
+  --volume "$(pwd)/plots:/open_vins_ws/plots" \
+  --workdir /open_vins_ws/plots \
+  open_vins \
+  ros2 launch ov_msckf multi_agent_mav_sim.launch.py plotting_enable:=true
+```
+
+Note that OpenVINS supports very old versions of Ubuntu and ROS, but this fork is intended for use with Ubuntu 24 and ROS2 Jazzy only.
+
+[![Container Workflow](https://github.com/byu-magicc/open_vins/actions/workflows/container.yml/badge.svg)](https://github.com/byu-magicc/open_vins/actions/workflows/container.yml)
+
+---
+
 # OpenVINS
 
 [![ROS 1 Workflow](https://github.com/rpng/open_vins/actions/workflows/build_ros1.yml/badge.svg)](https://github.com/rpng/open_vins/actions/workflows/build_ros1.yml)

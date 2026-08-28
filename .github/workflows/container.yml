@@ -1,0 +1,33 @@
+name: Container Workflow
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build_and_run:
+    name: Build and run multi-agent simulation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v6
+
+      - name: Build container
+        run: podman build --tag open-vins:ci --file Containerfile .
+
+      - name: Run multi-agent simulation
+        run: |
+          mkdir -p plots
+          podman run --rm \
+            --volume "${PWD}/plots:/open_vins_ws/plots" \
+            --workdir /open_vins_ws/plots \
+            open-vins:ci \
+            ros2 launch ov_msckf multi_agent_mav_sim.launch.py plotting_enable:=true
+
+      - name: Verify plotting output
+        run: find plots -mindepth 1 -maxdepth 1 -print -quit | grep --quiet .
