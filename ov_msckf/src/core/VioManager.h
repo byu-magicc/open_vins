@@ -48,6 +48,7 @@ namespace ov_msckf {
 
 class State;
 class StateHelper;
+class FactorGraphManager;
 class UpdaterGlobal;
 class UpdaterMSCKF;
 class UpdaterSLAM;
@@ -69,6 +70,7 @@ public:
    * @param params_ Parameters loaded from either ROS or CMDLINE
    */
   VioManager(VioManagerOptions &params_);
+  ~VioManager();
 
   /**
    * @brief Feed function for inertial data
@@ -201,6 +203,9 @@ protected:
 
   /// State initializer
   std::shared_ptr<ov_init::InertialInitializer> initializer;
+
+  /// Passive factor-graph estimator which receives the same accepted information when enabled
+  std::unique_ptr<FactorGraphManager> factorGraphManager;
 
   /// Boolean if we are initialized or not
   bool is_initialized_vio = false;

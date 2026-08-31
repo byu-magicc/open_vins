@@ -62,7 +62,16 @@ launch_args = [
         default_value="true",
         description="if we have more than 1 camera, if we should try to track stereo constraints between pairs",
     ),
-
+    DeclareLaunchArgument(
+        name="use_factor_graph",
+        default_value="false",
+        description="enable the passive factor-graph estimator interface",
+    ),
+    DeclareLaunchArgument(
+        name="factor_graph_output_path",
+        default_value="/tmp/openvins_factor_graph.csv",
+        description="aligned OpenVINS/factor-graph state and covariance CSV",
+    ),
     DeclareLaunchArgument(
         name="feat_dist_min",
         default_value="5.0"
@@ -258,6 +267,8 @@ def launch_setup(context):
             {"max_clones": LaunchConfiguration("num_clones")},
             {"max_slam": LaunchConfiguration("num_slam")},
             {"use_stereo": LaunchConfiguration("use_stereo")},
+            {"use_factor_graph": LaunchConfiguration("use_factor_graph")},
+            {"factor_graph_output_path": LaunchConfiguration("factor_graph_output_path")},
             {"max_cameras": LaunchConfiguration("max_cameras")},
             {"feat_rep_msckf": LaunchConfiguration("feat_rep")},
             {"feat_rep_slam": LaunchConfiguration("feat_rep")},

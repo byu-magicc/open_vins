@@ -34,6 +34,7 @@ list(APPEND thirdparty_libraries
         ${Boost_LIBRARIES}
         ${CERES_LIBRARIES}
         ${OpenCV_LIBRARIES}
+        gtsam
 )
 list(APPEND ament_libraries
         rclcpp
@@ -59,6 +60,9 @@ list(APPEND LIBRARY_SOURCES
         src/state/State.cpp
         src/state/StateHelper.cpp
         src/state/Propagator.cpp
+        src/factor_graph/FactorGraphFactors.cpp
+        src/factor_graph/FactorGraphManager.cpp
+        src/factor_graph/FactorGraphState.cpp
         src/core/VioManager.cpp
         src/core/VioManagerHelper.cpp
         src/update/UpdaterGlobal.cpp
@@ -70,6 +74,7 @@ list(APPEND LIBRARY_SOURCES
 list(APPEND LIBRARY_SOURCES src/ros/ROS2Visualizer.cpp src/ros/ROSVisualizerHelper.cpp)
 file(GLOB_RECURSE LIBRARY_HEADERS "src/*.h")
 add_library(ov_msckf_lib SHARED ${LIBRARY_SOURCES} ${LIBRARY_HEADERS})
+set_target_properties(ov_msckf_lib PROPERTIES NO_SYSTEM_FROM_IMPORTED TRUE)
 ament_target_dependencies(ov_msckf_lib ${ament_libraries})
 target_link_libraries(ov_msckf_lib ${thirdparty_libraries})
 target_include_directories(ov_msckf_lib PUBLIC src/)

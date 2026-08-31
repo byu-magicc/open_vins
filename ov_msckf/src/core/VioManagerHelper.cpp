@@ -21,6 +21,7 @@
 
 #include "VioManager.h"
 
+#include "factor_graph/FactorGraphManager.h"
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"
@@ -56,6 +57,11 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   state->_timestamp = imustate(0, 0);
   startup_time = imustate(0, 0);
   is_initialized_vio = true;
+
+  // Seed the passive graph with the same initialized navigation value and uncertainty
+  if (factorGraphManager != nullptr) {
+    factorGraphManager->initialize(state);
+  }
 
   // Cleanup any features older then the initialization time
   trackFEATS->get_feature_database()->cleanup_measurements(state->_timestamp);
@@ -117,6 +123,11 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       state->_timestamp = timestamp;
       startup_time = timestamp;
 
+      // Seed the passive graph only after OpenVINS has accepted the initialization result
+      if (factorGraphManager != nullptr) {
+        factorGraphManager->initialize(state);
+      }
+
       // Cleanup any features older than the initialization time
       // Also increase the number of features to the desired amount during estimation
       // NOTE: we will split the total number of features over all cameras uniformly
@@ -160,6 +171,9 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       for (size_t i = 0; i < camera_timestamps_to_init.size(); i += clone_rate) {
         propagator->propagate_and_clone(state, camera_timestamps_to_init.at(i));
         StateHelper::marginalize_old_clone(state);
+        if (factorGraphManager != nullptr) {
+          factorGraphManager->finish_camera_update(state);
+        }
       }
       PRINT_DEBUG(YELLOW "[init]: moved the state forward %.2f seconds\n" RESET, state->_timestamp - timestamp);
       thread_init_success = true;

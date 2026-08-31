@@ -36,6 +36,7 @@
 
 #include "init/InertialInitializer.h"
 
+#include "factor_graph/FactorGraphManager.h"
 #include "state/Propagator.h"
 #include "state/State.h"
 #include "state/StateHelper.h"
@@ -47,6 +48,33 @@
 using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
+
+namespace {
+
+FactorGraphVisualUpdate create_factor_graph_visual_update(FactorGraphVisualUpdateType type,
+                                                          const std::vector<std::shared_ptr<Feature>> &features, int max_aruco_features) {
+  FactorGraphVisualUpdate update;
+  update.type = type;
+  update.tracks.reserve(features.size());
+  for (const auto &feature : features) {
+    FactorGraphFeatureTrack track;
+    track.feature_id = feature->featid;
+    // Match the classification used by UpdaterSLAM when selecting its visual noise and gate.
+    track.is_aruco = (int)feature->featid < max_aruco_features;
+    track.anchor_camera_id = feature->anchor_cam_id;
+    track.anchor_timestamp = feature->anchor_clone_timestamp;
+    track.position_global = feature->p_FinG;
+    track.position_anchor = feature->p_FinA;
+    track.timestamps = feature->timestamps;
+    track.uvs = feature->uvs;
+    update.tracks.push_back(track);
+  }
+  return update;
+}
+
+} // namespace
+
+VioManager::~VioManager() = default;
 
 VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false), thread_init_success(false) {
 
@@ -69,6 +97,11 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
 
   // Create the state!!
   state = std::make_shared<State>(params.state_options);
+
+  // Create the passive factor-graph estimator only when explicitly requested
+  if (params.use_factor_graph) {
+    factorGraphManager = std::make_unique<FactorGraphManager>(params);
+  }
 
   // Set the IMU intrinsics
   state->_calib_imu_dw->set_value(params.vec_dw);
@@ -188,11 +221,19 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
   if (is_initialized_vio && updaterZUPT != nullptr && (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
     updaterZUPT->feed_imu(message, oldest_time);
   }
+
+  // The factor graph owns its own IMU buffering and will eventually preintegrate these measurements
+  if (factorGraphManager != nullptr) {
+    factorGraphManager->feed_imu(message);
+  }
 }
 
 void VioManager::feed_measurement_gps(const ov_core::GPSData &message) {
   // Give the GPD data to the global updater, without applying it to the state
   updaterGlobal->feed_gps(message);
+  if (factorGraphManager != nullptr) {
+    factorGraphManager->feed_gps(message);
+  }
 }
 
 void VioManager::feed_measurement_simulation(double timestamp, const std::vector<int> &camids,
@@ -232,6 +273,10 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
     }
     if (did_zupt_update) {
       assert(state->_timestamp == timestamp);
+      if (factorGraphManager != nullptr) {
+        factorGraphManager->add_zero_velocity_factor(timestamp);
+        factorGraphManager->finish_camera_update(state);
+      }
       propagator->clean_old_imu_measurements(timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       propagator->invalidate_cache();
@@ -305,6 +350,10 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
     }
     if (did_zupt_update) {
       assert(state->_timestamp == message.timestamp);
+      if (factorGraphManager != nullptr) {
+        factorGraphManager->add_zero_velocity_factor(message.timestamp);
+        factorGraphManager->finish_camera_update(state);
+      }
       propagator->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       propagator->invalidate_cache();
@@ -355,6 +404,9 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if ((int)state->_clones_IMU.size() < std::min(state->_options.max_clone_size, 5)) {
     PRINT_DEBUG("waiting for enough clone states (%d of %d)....\n", (int)state->_clones_IMU.size(),
                 std::min(state->_options.max_clone_size, 5));
+    if (factorGraphManager != nullptr) {
+      factorGraphManager->finish_camera_update(state);
+    }
     return;
   }
 
@@ -362,6 +414,9 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if (state->_timestamp != message.timestamp) {
     PRINT_WARNING(RED "[PROP]: Propagator unable to propagate the state forward in time!\n" RESET);
     PRINT_WARNING(RED "[PROP]: It has been %.3f since last time we propagated\n" RESET, message.timestamp - state->_timestamp);
+    if (factorGraphManager != nullptr) {
+      factorGraphManager->finish_camera_update(state);
+    }
     return;
   }
   has_moved_since_zupt = true;
@@ -482,10 +537,23 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
       landmark.second->should_marg = true;
   }
 
+  // Record which persistent landmarks OpenVINS will remove so the factor graph receives the same lifecycle event
+  std::vector<size_t> marginalized_slam_feature_ids;
+  if (factorGraphManager != nullptr) {
+    for (const auto &landmark : state->_features_SLAM) {
+      if (landmark.second->should_marg && (int)landmark.first > 4 * state->_options.max_aruco_features) {
+        marginalized_slam_feature_ids.push_back(landmark.first);
+      }
+    }
+  }
+
   // Lets marginalize out all old SLAM features here
   // These are ones that where not successfully tracked into the current frame
   // We do *NOT* marginalize out our aruco tags landmarks
   StateHelper::marginalize_slam(state);
+  if (factorGraphManager != nullptr && !marginalized_slam_feature_ids.empty()) {
+    factorGraphManager->marginalize_landmarks(marginalized_slam_feature_ids);
+  }
 
   // Separate our SLAM features into new ones, and old ones
   std::vector<std::shared_ptr<Feature>> feats_slam_DELAYED, feats_slam_UPDATE;
@@ -530,6 +598,10 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if ((int)featsup_MSCKF.size() > state->_options.max_msckf_in_update)
     featsup_MSCKF.erase(featsup_MSCKF.begin(), featsup_MSCKF.end() - state->_options.max_msckf_in_update);
   updaterMSCKF->update(state, featsup_MSCKF);
+  if (factorGraphManager != nullptr && !featsup_MSCKF.empty()) {
+    factorGraphManager->add_visual_factors(
+        create_factor_graph_visual_update(FactorGraphVisualUpdateType::STRUCTURELESS, featsup_MSCKF, state->_options.max_aruco_features));
+  }
   propagator->invalidate_cache();
   rT4 = boost::posix_time::microsec_clock::local_time();
 
@@ -550,8 +622,16 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     propagator->invalidate_cache();
   }
   feats_slam_UPDATE = feats_slam_UPDATE_TEMP;
+  if (factorGraphManager != nullptr && !feats_slam_UPDATE.empty()) {
+    factorGraphManager->add_visual_factors(create_factor_graph_visual_update(FactorGraphVisualUpdateType::PERSISTENT_UPDATE,
+                                                                             feats_slam_UPDATE, state->_options.max_aruco_features));
+  }
   rT5 = boost::posix_time::microsec_clock::local_time();
   updaterSLAM->delayed_init(state, feats_slam_DELAYED);
+  if (factorGraphManager != nullptr && !feats_slam_DELAYED.empty()) {
+    factorGraphManager->add_visual_factors(create_factor_graph_visual_update(FactorGraphVisualUpdateType::PERSISTENT_INITIALIZATION,
+                                                                             feats_slam_DELAYED, state->_options.max_aruco_features));
+  }
   rT6 = boost::posix_time::microsec_clock::local_time();
 
   //===================================================================================
@@ -603,12 +683,15 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   StateHelper::marginalize_old_clone(state);
   rT7 = boost::posix_time::microsec_clock::local_time();
 
-
   //===================================================================================
   // Apply any global measurements
   //===================================================================================
 
   updaterGlobal->update(state);
+  if (factorGraphManager != nullptr) {
+    factorGraphManager->apply_pending_global_factors(message.timestamp);
+    factorGraphManager->finish_camera_update(state);
+  }
 
   //===================================================================================
   // Debug info, and stats tracking

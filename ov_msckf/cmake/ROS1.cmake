@@ -37,6 +37,7 @@ list(APPEND thirdparty_libraries
         ${OpenCV_LIBRARIES}
         ${CERES_LIBRARIES}
         ${catkin_LIBRARIES}
+        gtsam
 )
 
 # If we are not building with ROS then we need to manually link to its headers
@@ -82,6 +83,9 @@ list(APPEND LIBRARY_SOURCES
         src/state/State.cpp
         src/state/StateHelper.cpp
         src/state/Propagator.cpp
+        src/factor_graph/FactorGraphFactors.cpp
+        src/factor_graph/FactorGraphManager.cpp
+        src/factor_graph/FactorGraphState.cpp
         src/core/VioManager.cpp
         src/core/VioManagerHelper.cpp
         src/update/UpdaterGlobal.cpp
@@ -95,6 +99,7 @@ if (catkin_FOUND AND ENABLE_ROS)
 endif ()
 file(GLOB_RECURSE LIBRARY_HEADERS "src/*.h")
 add_library(ov_msckf_lib SHARED ${LIBRARY_SOURCES} ${LIBRARY_HEADERS})
+set_target_properties(ov_msckf_lib PROPERTIES NO_SYSTEM_FROM_IMPORTED TRUE)
 target_link_libraries(ov_msckf_lib ${thirdparty_libraries})
 target_include_directories(ov_msckf_lib PUBLIC src/)
 install(TARGETS ov_msckf_lib

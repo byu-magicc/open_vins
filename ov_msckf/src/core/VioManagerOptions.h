@@ -94,6 +94,12 @@ struct VioManagerOptions {
   /// If we should only use the zupt at the very beginning static initialization phase
   bool zupt_only_at_beginning = false;
 
+  /// If the passive factor-graph estimator interface should receive accepted measurements
+  bool use_factor_graph = false;
+
+  /// CSV file containing aligned OpenVINS/factor-graph states and covariances
+  std::string factor_graph_output_path = "/tmp/openvins_factor_graph.csv";
+
   /// If we should record the timing performance to file
   bool record_timing_information = false;
 
@@ -117,6 +123,8 @@ struct VioManagerOptions {
       parser->parse_config("zupt_noise_multiplier", zupt_noise_multiplier);
       parser->parse_config("zupt_max_disparity", zupt_max_disparity);
       parser->parse_config("zupt_only_at_beginning", zupt_only_at_beginning);
+      parser->parse_config("use_factor_graph", use_factor_graph, false);
+      parser->parse_config("factor_graph_output_path", factor_graph_output_path, false);
       parser->parse_config("record_timing_information", record_timing_information);
       parser->parse_config("record_timing_filepath", record_timing_filepath);
     }
@@ -126,6 +134,8 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - zupt_noise_multiplier: %.2f\n", zupt_noise_multiplier);
     PRINT_DEBUG("  - zupt_max_disparity: %.4f\n", zupt_max_disparity);
     PRINT_DEBUG("  - zupt_only_at_beginning?: %d\n", zupt_only_at_beginning);
+    PRINT_DEBUG("  - use factor graph?: %d\n", use_factor_graph);
+    PRINT_DEBUG("  - factor graph output: %s\n", factor_graph_output_path.c_str());
     PRINT_DEBUG("  - record timing?: %d\n", (int)record_timing_information);
     PRINT_DEBUG("  - record timing filepath: %s\n", record_timing_filepath.c_str());
   }
