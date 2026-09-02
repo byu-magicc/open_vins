@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
+"""Plot recorded OpenVINS results for one or more agents.
 
+Usage:
+    python3 plotters/openvins_multi_agent.py results plots
+
+The results directory may either be one agent directory, or a directory whose
+immediate children are agent directories. Each agent directory must contain
+``openvins.csv`` and ``groundtruth.csv`` as written with ``save_results:=true``.
+The script writes the same three SVG plots and NPZ data archive as the former
+ROS plotter into the output directory.
+"""
+
+import argparse
 import os
-import rclpy
-from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from pathlib import Path
+
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -12,52 +23,65 @@ import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 
 
-class DataPlotterNode(Node):
-    def __init__(self):
-        super().__init__('data_plotter_node')
+def load_csv(path, required_columns):
+    if not path.is_file():
+        raise ValueError(f"Missing input file: {path}")
+    data = np.atleast_1d(np.genfromtxt(path, delimiter=',', names=True, dtype=float))
+    missing = sorted(set(required_columns) - set(data.dtype.names or ()))
+    if missing:
+        raise ValueError(f"{path} is missing columns: {', '.join(missing)}")
+    if data.size == 0:
+        raise ValueError(f"{path} contains no result rows")
+    return data
 
-        # Declare parameters
-        self.declare_parameter('agent_namespaces', ['ov_msckf'])
 
-        # Get parameters
-        agent_namespaces = self.get_parameter('agent_namespaces').get_parameter_value().string_array_value
+class DataPlotter:
+    def __init__(self, results_directory, output_directory):
+        self.output_directory = output_directory
+        if (results_directory / 'openvins.csv').is_file() and (results_directory / 'groundtruth.csv').is_file():
+            agent_directories = [results_directory]
+        else:
+            agent_directories = sorted(
+                directory for directory in results_directory.iterdir()
+                if directory.is_dir()
+                and (directory / 'openvins.csv').is_file()
+                and (directory / 'groundtruth.csv').is_file()
+            )
+        if not agent_directories:
+            raise ValueError(f"No agent results found in {results_directory}")
 
-        # Initialize data storage
+        state_columns = (
+            'timestamp', 'q_x', 'q_y', 'q_z', 'q_w', 'p_x', 'p_y', 'p_z'
+        )
+        estimator_columns = state_columns + tuple(f'cov_{index}_{index}' for index in range(6))
+
         self.time_data = {}
-        for namespace in agent_namespaces:
-            self.time_data[namespace] = []
         self.global_truth_data = {}
-        for namespace in agent_namespaces:
-            self.global_truth_data[namespace] = []
         self.global_estimate_data = {}
-        for namespace in agent_namespaces:
-            self.global_estimate_data[namespace] = []
+        self.global_position_std = {}
+        self.global_orientation_std = {}
+        for directory in agent_directories:
+            truth = load_csv(directory / 'groundtruth.csv', state_columns)
+            estimate = load_csv(directory / 'openvins.csv', estimator_columns)
+            if truth.size != estimate.size or not np.array_equal(truth['timestamp'], estimate['timestamp']):
+                raise ValueError(f"Timestamps do not match in {directory}")
 
-        # Create subscribers
-        self.time_subs = {}
-        self.global_truth_subs = {}
-        self.global_estimate_subs = {}
-        for namespace in agent_namespaces:
-            truth_topic_name = '/' + namespace + '/posegt'
-            self.time_subs[namespace] = self.create_subscription(
-                PoseStamped,
-                truth_topic_name,
-                lambda msg, n=namespace: self.time_data[n].append(msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9),
-                1000
-            )
-            self.global_truth_subs[namespace] = self.create_subscription(
-                PoseStamped,
-                truth_topic_name,
-                lambda msg, n=namespace: self.global_truth_data[n].append(msg.pose),
-                1000
-            )
-            global_estimate_topic_name = '/' + namespace + '/poseimu'
-            self.global_estimate_subs[namespace] = self.create_subscription(
-                PoseWithCovarianceStamped,
-                global_estimate_topic_name,
-                lambda msg, n=namespace: self.global_estimate_data[n].append(msg.pose),
-                1000
-            )
+            key = directory.name
+            self.time_data[key] = np.asarray(truth['timestamp'])
+            self.global_truth_data[key] = np.column_stack([
+                truth['p_x'], truth['p_y'], truth['p_z'],
+                truth['q_x'], truth['q_y'], truth['q_z'], truth['q_w'],
+            ])
+            self.global_estimate_data[key] = np.column_stack([
+                estimate['p_x'], estimate['p_y'], estimate['p_z'],
+                estimate['q_x'], estimate['q_y'], estimate['q_z'], estimate['q_w'],
+            ])
+            self.global_position_std[key] = np.sqrt(np.column_stack([
+                estimate['cov_3_3'], estimate['cov_4_4'], estimate['cov_5_5'],
+            ]))
+            self.global_orientation_std[key] = np.sqrt(np.column_stack([
+                estimate['cov_0_0'], estimate['cov_1_1'], estimate['cov_2_2'],
+            ]))
 
 
     def plot_data(self):
@@ -70,61 +94,16 @@ class DataPlotterNode(Node):
         global_estimate_orientation = {}
         global_orientation_std = {}
         for key in self.global_truth_data.keys():
-            time[key] = []
-            global_truth_position[key] = []
-            global_truth_orientation[key] = []
-            global_estimate_position[key] = []
-            global_position_std[key] = []
-            global_estimate_orientation[key] = []
-            global_orientation_std[key] = []
-
-            time_data = self.time_data[key]
-            global_truth_data = self.global_truth_data[key]
-            global_estimate_data = self.global_estimate_data[key]
-            for i in range(len(global_truth_data)):
-                time[key].append(time_data[i])
-                global_truth_position[key].append([
-                    global_truth_data[i].position.x,
-                    global_truth_data[i].position.y,
-                    global_truth_data[i].position.z
-                ])
-                global_truth_orientation[key].append([
-                    global_truth_data[i].orientation.x,
-                    global_truth_data[i].orientation.y,
-                    global_truth_data[i].orientation.z,
-                    global_truth_data[i].orientation.w
-                ])
-                global_estimate_position[key].append([
-                    global_estimate_data[i].pose.position.x,
-                    global_estimate_data[i].pose.position.y,
-                    global_estimate_data[i].pose.position.z
-                ])
-                global_position_std[key].append([
-                    np.sqrt(global_estimate_data[i].covariance[0]),
-                    np.sqrt(global_estimate_data[i].covariance[7]),
-                    np.sqrt(global_estimate_data[i].covariance[14])
-                ])
-                global_estimate_orientation[key].append([
-                    global_estimate_data[i].pose.orientation.x,
-                    global_estimate_data[i].pose.orientation.y,
-                    global_estimate_data[i].pose.orientation.z,
-                    global_estimate_data[i].pose.orientation.w
-                ])
-                global_orientation_std[key].append([
-                    np.sqrt(global_estimate_data[i].covariance[21]),
-                    np.sqrt(global_estimate_data[i].covariance[28]),
-                    np.sqrt(global_estimate_data[i].covariance[35])
-                ])
-            time[key] = np.array(time[key]) - time[key][0]
-            global_truth_position[key] = np.array(global_truth_position[key])
-            global_truth_orientation[key] = np.array(global_truth_orientation[key])
-            global_estimate_position[key] = np.array(global_estimate_position[key])
-            global_position_std[key] = np.array(global_position_std[key])
-            global_estimate_orientation[key] = np.array(global_estimate_orientation[key])
-            global_orientation_std[key] = np.array(global_orientation_std[key])
+            time[key] = self.time_data[key] - self.time_data[key][0]
+            global_truth_position[key] = self.global_truth_data[key][:, :3]
+            global_truth_orientation[key] = self.global_truth_data[key][:, 3:]
+            global_estimate_position[key] = self.global_estimate_data[key][:, :3]
+            global_position_std[key] = self.global_position_std[key]
+            global_estimate_orientation[key] = self.global_estimate_data[key][:, 3:]
+            global_orientation_std[key] = self.global_orientation_std[key]
 
         # Get filenames for saving plots and data
-        plots_directory = 'plots'
+        plots_directory = self.output_directory
         os.makedirs(plots_directory, exist_ok=True)
         counter = 0
         while os.path.exists(os.path.join(plots_directory, f'data_{counter}.npz')):
@@ -322,21 +301,16 @@ class DataPlotterNode(Node):
         plt.tight_layout()
         plt.savefig(global_error_filename)
 
-        self.get_logger().info('Plots generated and data saved successfully!')
+        print(f'Plots generated and data saved in {plots_directory}')
 
-def main(args=None):
-    rclpy.init(args=args)
-    node = DataPlotterNode()
 
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
+def main():
+    parser = argparse.ArgumentParser(description='Plot recorded OpenVINS results for one or more agents.')
+    parser.add_argument('results_directory', type=Path)
+    parser.add_argument('output_directory', type=Path)
+    args = parser.parse_args()
+    DataPlotter(args.results_directory, args.output_directory).plot_data()
 
-    node.get_logger().info('Generating plots and saving data...')
-    node.plot_data()
-    node.destroy_node()
-    rclpy.try_shutdown()
 
 if __name__ == '__main__':
     main()
