@@ -78,11 +78,15 @@ struct FactorGraphVisualUpdate {
   std::vector<FactorGraphFeatureTrack> tracks;
 };
 
-/** @brief OpenVINS state snapshot used only for aligned validation output. */
-struct FactorGraphReferenceState {
+/** @brief Factor-graph navigation result aligned with one camera transaction. */
+struct FactorGraphResult {
   double timestamp = -1;
+  bool valid = false;
   Eigen::Matrix<double, 16, 1> imu_state = Eigen::Matrix<double, 16, 1>::Zero();
   Eigen::Matrix<double, 15, 15> covariance = Eigen::Matrix<double, 15, 15>::Zero();
+  size_t factor_count = 0;
+  size_t value_count = 0;
+  double update_seconds = 0;
 };
 
 } // namespace ov_msckf

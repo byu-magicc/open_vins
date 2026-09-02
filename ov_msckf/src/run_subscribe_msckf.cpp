@@ -82,6 +82,11 @@ int main(int argc, char **argv) {
   // Create our VIO system
   VioManagerOptions params;
   params.print_and_load(parser);
+#if ROS_AVAILABLE == 1
+  params.set_results_namespace(ros::this_node::getNamespace());
+#elif ROS_AVAILABLE == 2
+  params.set_results_namespace(node->get_namespace());
+#endif
   params.use_multi_threading_subs = true;
   sys = std::make_shared<VioManager>(params);
 #if ROS_AVAILABLE == 1

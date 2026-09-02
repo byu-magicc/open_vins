@@ -18,7 +18,6 @@
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/Values.h>
 
-#include <fstream>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -45,8 +44,8 @@ public:
   void marginalize_landmarks(const std::vector<size_t> &feature_ids);
   void apply_pending_global_factors(double timestamp);
 
-  /** Commit one OpenVINS camera transaction and record an aligned estimate. */
-  void finish_update(const FactorGraphReferenceState &reference);
+  /** Commit one camera transaction and return the aligned navigation result. */
+  FactorGraphResult finish_update(double timestamp);
 
 private:
   struct Frame {
@@ -56,20 +55,10 @@ private:
     gtsam::Key bias_key = 0;
   };
 
-  struct Estimate {
-    bool valid = false;
-    Eigen::Matrix<double, 16, 1> imu_state = Eigen::Matrix<double, 16, 1>::Zero();
-    Eigen::Matrix<double, 15, 15> covariance = Eigen::Matrix<double, 15, 15>::Zero();
-    size_t factor_count = 0;
-    size_t value_count = 0;
-    double update_seconds = 0;
-  };
-
   gtsam::Values current_values() const;
   Frame &ensure_frame(double timestamp);
   void commit();
-  Estimate current_estimate(double timestamp);
-  void write_comparison(const FactorGraphReferenceState &reference, const Estimate &estimate);
+  FactorGraphResult current_estimate(double timestamp);
 
   std::unique_ptr<gtsam::ISAM2> optimizer;
   gtsam::NonlinearFactorGraph pending_factors;
@@ -96,7 +85,6 @@ private:
   size_t next_landmark_index = 0;
   double last_update_seconds = 0;
 
-  std::ofstream output;
   std::mutex mutex;
 };
 

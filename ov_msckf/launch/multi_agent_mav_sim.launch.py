@@ -9,6 +9,9 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('save_results', default_value='false'),
+        DeclareLaunchArgument('results_path', default_value='results'),
+
         # Instance 0
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
@@ -19,7 +22,8 @@ def generate_launch_description():
                 'max_cameras': '1',
                 'use_stereo': 'false',
                 'use_factor_graph': 'true',
-                'factor_graph_output_path': '/tmp/openvins_factor_graph_center.csv',
+                'save_results': LaunchConfiguration('save_results'),
+                'results_path': LaunchConfiguration('results_path'),
                 'use_ground_plane_features': 'true',
                 'ground_plane_features_range': '2.0',
             }.items(),
@@ -36,7 +40,8 @@ def generate_launch_description():
                 'max_cameras': '1',
                 'use_stereo': 'false',
                 'use_factor_graph': 'true',
-                'factor_graph_output_path': '/tmp/openvins_factor_graph_left.csv',
+                'save_results': LaunchConfiguration('save_results'),
+                'results_path': LaunchConfiguration('results_path'),
                 'use_ground_plane_features': 'true',
                 'ground_plane_features_range': '2.0',
             }.items(),
@@ -53,7 +58,8 @@ def generate_launch_description():
                 'max_cameras': '1',
                 'use_stereo': 'false',
                 'use_factor_graph': 'true',
-                'factor_graph_output_path': '/tmp/openvins_factor_graph_right.csv',
+                'save_results': LaunchConfiguration('save_results'),
+                'results_path': LaunchConfiguration('results_path'),
                 'use_ground_plane_features': 'true',
                 'ground_plane_features_range': '2.0',
             }.items(),

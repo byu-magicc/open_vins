@@ -97,8 +97,20 @@ struct VioManagerOptions {
   /// If the passive factor-graph estimator interface should receive accepted measurements
   bool use_factor_graph = false;
 
-  /// CSV file containing aligned OpenVINS/factor-graph states and covariances
-  std::string factor_graph_output_path = "/tmp/openvins_factor_graph.csv";
+  /// If aligned OpenVINS, factor-graph, and ground-truth results should be saved
+  bool save_results = false;
+
+  /// Directory containing the result CSV files
+  std::string results_path = "results";
+
+  /** Place result files under the running vehicle's ROS namespace. */
+  void set_results_namespace(const std::string &ros_namespace) {
+    const size_t begin = ros_namespace.find_first_not_of('/');
+    if (begin == std::string::npos)
+      return;
+    const size_t end = ros_namespace.find_last_not_of('/');
+    results_path += "/" + ros_namespace.substr(begin, end - begin + 1);
+  }
 
   /// If we should record the timing performance to file
   bool record_timing_information = false;
@@ -124,7 +136,8 @@ struct VioManagerOptions {
       parser->parse_config("zupt_max_disparity", zupt_max_disparity);
       parser->parse_config("zupt_only_at_beginning", zupt_only_at_beginning);
       parser->parse_config("use_factor_graph", use_factor_graph, false);
-      parser->parse_config("factor_graph_output_path", factor_graph_output_path, false);
+      parser->parse_config("save_results", save_results, false);
+      parser->parse_config("results_path", results_path, false);
       parser->parse_config("record_timing_information", record_timing_information);
       parser->parse_config("record_timing_filepath", record_timing_filepath);
     }
@@ -135,7 +148,8 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - zupt_max_disparity: %.4f\n", zupt_max_disparity);
     PRINT_DEBUG("  - zupt_only_at_beginning?: %d\n", zupt_only_at_beginning);
     PRINT_DEBUG("  - use factor graph?: %d\n", use_factor_graph);
-    PRINT_DEBUG("  - factor graph output: %s\n", factor_graph_output_path.c_str());
+    PRINT_DEBUG("  - save results?: %d\n", save_results);
+    PRINT_DEBUG("  - results path: %s\n", results_path.c_str());
     PRINT_DEBUG("  - record timing?: %d\n", (int)record_timing_information);
     PRINT_DEBUG("  - record timing filepath: %s\n", record_timing_filepath.c_str());
   }

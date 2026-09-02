@@ -68,9 +68,14 @@ launch_args = [
         description="enable the passive factor-graph estimator interface",
     ),
     DeclareLaunchArgument(
-        name="factor_graph_output_path",
-        default_value="/tmp/openvins_factor_graph.csv",
-        description="aligned OpenVINS/factor-graph state and covariance CSV",
+        name="save_results",
+        default_value="false",
+        description="save aligned OpenVINS, factor-graph, and ground-truth CSV files",
+    ),
+    DeclareLaunchArgument(
+        name="results_path",
+        default_value="results",
+        description="base result directory; the ROS namespace is appended automatically",
     ),
     DeclareLaunchArgument(
         name="feat_dist_min",
@@ -268,7 +273,8 @@ def launch_setup(context):
             {"max_slam": LaunchConfiguration("num_slam")},
             {"use_stereo": LaunchConfiguration("use_stereo")},
             {"use_factor_graph": LaunchConfiguration("use_factor_graph")},
-            {"factor_graph_output_path": LaunchConfiguration("factor_graph_output_path")},
+            {"save_results": LaunchConfiguration("save_results")},
+            {"results_path": LaunchConfiguration("results_path")},
             {"max_cameras": LaunchConfiguration("max_cameras")},
             {"feat_rep_msckf": LaunchConfiguration("feat_rep")},
             {"feat_rep_slam": LaunchConfiguration("feat_rep")},

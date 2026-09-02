@@ -83,6 +83,11 @@ int main(int argc, char **argv) {
   VioManagerOptions params;
   params.print_and_load(parser);
   params.print_and_load_simulation(parser);
+#if ROS_AVAILABLE == 1
+  params.set_results_namespace(ros::this_node::getNamespace());
+#elif ROS_AVAILABLE == 2
+  params.set_results_namespace(node->get_namespace());
+#endif
   params.num_opencv_threads = 0; // for repeatability
   params.use_multi_threading_pubs = false;
   params.use_multi_threading_subs = false;
@@ -159,6 +164,12 @@ int main(int argc, char **argv) {
     if (hascam) {
       if (buffer_timecam != -1) {
         sys->feed_measurement_simulation(buffer_timecam, buffer_camids, buffer_feats);
+        if (params.save_results) {
+          Eigen::Matrix<double, 17, 1> groundtruth;
+          const double groundtruth_time = buffer_timecam + sim->get_true_parameters().calib_camimu_dt;
+          if (sim->get_state(groundtruth_time, groundtruth))
+            sys->record_groundtruth(buffer_timecam, groundtruth.segment<16>(1));
+        }
 #if ROS_AVAILABLE == 1 || ROS_AVAILABLE == 2
         viz->visualize();
 #endif

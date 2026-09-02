@@ -69,8 +69,8 @@ public:
   /** @brief Apply queued global measurements at the same update boundary as OpenVINS. */
   void apply_pending_global_factors(double timestamp);
 
-  /** @brief Commit a camera transaction and save an aligned state/covariance comparison. */
-  void finish_camera_update(const std::shared_ptr<State> &openvins_state);
+  /** @brief Commit a camera transaction and return the aligned factor-graph result. */
+  FactorGraphResult finish_camera_update(double timestamp);
 
 private:
   std::unique_ptr<FactorGraphState> state;

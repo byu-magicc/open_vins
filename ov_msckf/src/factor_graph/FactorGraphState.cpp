@@ -20,11 +20,8 @@
 #include <gtsam/navigation/GPSFactor.h>
 #include <gtsam/nonlinear/LinearContainerFactor.h>
 
-#include <boost/filesystem.hpp>
-
 #include <algorithm>
 #include <chrono>
-#include <iomanip>
 #include <limits>
 #include <numeric>
 #include <set>
@@ -174,12 +171,6 @@ FactorGraphState::FactorGraphState(const VioManagerOptions &options) {
     camera_calibrations.insert({camera_id, calibration});
   }
 
-  if (!options.factor_graph_output_path.empty()) {
-    const boost::filesystem::path output_path(options.factor_graph_output_path);
-    if (!output_path.parent_path().empty())
-      boost::filesystem::create_directories(output_path.parent_path());
-    output.open(options.factor_graph_output_path);
-  }
 }
 
 void FactorGraphState::feed_imu(const ov_core::ImuData &message) {
@@ -517,8 +508,9 @@ void FactorGraphState::apply_pending_global_factors(double timestamp) {
   commit();
 }
 
-FactorGraphState::Estimate FactorGraphState::current_estimate(double timestamp) {
-  Estimate estimate;
+FactorGraphResult FactorGraphState::current_estimate(double timestamp) {
+  FactorGraphResult estimate;
+  estimate.timestamp = timestamp;
   if (!initialized || frames.empty())
     return estimate;
   const gtsam::Values values = optimizer->calculateEstimate();
@@ -623,46 +615,12 @@ FactorGraphState::Estimate FactorGraphState::current_estimate(double timestamp) 
   return estimate;
 }
 
-void FactorGraphState::write_comparison(const FactorGraphReferenceState &reference, const Estimate &estimate) {
-  if (!output.is_open())
-    return;
-  if (output.tellp() == 0) {
-    output << "timestamp,valid";
-    for (int index = 0; index < 16; index++)
-      output << ",ov_state_" << index;
-    for (int index = 0; index < 16; index++)
-      output << ",fg_state_" << index;
-    for (int row = 0; row < 15; row++)
-      for (int column = 0; column < 15; column++)
-        output << ",ov_cov_" << row << "_" << column;
-    for (int row = 0; row < 15; row++)
-      for (int column = 0; column < 15; column++)
-        output << ",fg_cov_" << row << "_" << column;
-    output << ",factor_count,value_count,update_seconds\n";
-  }
-  output << std::setprecision(17) << reference.timestamp << "," << estimate.valid;
-  for (int index = 0; index < 16; index++)
-    output << "," << reference.imu_state(index);
-  for (int index = 0; index < 16; index++)
-    output << "," << estimate.imu_state(index);
-  for (int row = 0; row < 15; row++)
-    for (int column = 0; column < 15; column++)
-      output << "," << reference.covariance(row, column);
-  for (int row = 0; row < 15; row++)
-    for (int column = 0; column < 15; column++)
-      output << "," << estimate.covariance(row, column);
-  output << "," << estimate.factor_count << "," << estimate.value_count << "," << estimate.update_seconds << "\n";
-  output.flush();
-}
-
-void FactorGraphState::finish_update(const FactorGraphReferenceState &reference) {
+FactorGraphResult FactorGraphState::finish_update(double timestamp) {
   std::lock_guard<std::mutex> lock(mutex);
   if (!initialized)
-    return;
+    return FactorGraphResult();
   commit();
-  if (failed) {
-    write_comparison(reference, Estimate());
-    return;
-  }
-  write_comparison(reference, current_estimate(reference.timestamp));
+  if (failed)
+    return FactorGraphResult();
+  return current_estimate(timestamp);
 }

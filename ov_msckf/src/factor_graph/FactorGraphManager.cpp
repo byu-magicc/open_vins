@@ -79,12 +79,4 @@ void FactorGraphManager::marginalize_landmarks(const std::vector<size_t> &featur
 
 void FactorGraphManager::apply_pending_global_factors(double timestamp) { state->apply_pending_global_factors(timestamp); }
 
-void FactorGraphManager::finish_camera_update(const std::shared_ptr<State> &openvins_state) {
-  FactorGraphReferenceState reference;
-  reference.timestamp = openvins_state->_timestamp;
-  reference.imu_state = openvins_state->_imu->value();
-  reference.covariance =
-      StateHelper::get_marginal_covariance(openvins_state, {openvins_state->_imu->q(), openvins_state->_imu->p(), openvins_state->_imu->v(),
-                                                            openvins_state->_imu->bg(), openvins_state->_imu->ba()});
-  state->finish_update(reference);
-}
+FactorGraphResult FactorGraphManager::finish_camera_update(double timestamp) { return state->finish_update(timestamp); }

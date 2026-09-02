@@ -114,6 +114,9 @@ public:
   /// Accessor for current system parameters
   VioManagerOptions get_params() { return params; }
 
+  /// Record simulation ground truth for an aligned factor-graph result row
+  void record_groundtruth(double timestamp, const Eigen::Matrix<double, 16, 1> &groundtruth);
+
   /// Accessor to get the current state
   std::shared_ptr<State> get_state() { return state; }
 
@@ -175,6 +178,9 @@ protected:
    */
   bool try_to_initialize(const ov_core::CameraData &message);
 
+  /** Commit the graph update and record aligned OpenVINS/factor-graph results. */
+  void finish_factor_graph_update();
+
   /**
    * @brief This function will will re-triangulate all features in the current frame
    *
@@ -229,6 +235,9 @@ protected:
 
   // Timing statistic file and variables
   std::ofstream of_statistics;
+  std::ofstream openvins_results;
+  std::ofstream factor_graph_results;
+  std::ofstream groundtruth_results;
   boost::posix_time::ptime rT1, rT2, rT3, rT4, rT5, rT6, rT7;
 
   // Track how much distance we have traveled

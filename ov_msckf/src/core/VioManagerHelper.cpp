@@ -171,9 +171,7 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       for (size_t i = 0; i < camera_timestamps_to_init.size(); i += clone_rate) {
         propagator->propagate_and_clone(state, camera_timestamps_to_init.at(i));
         StateHelper::marginalize_old_clone(state);
-        if (factorGraphManager != nullptr) {
-          factorGraphManager->finish_camera_update(state);
-        }
+        finish_factor_graph_update();
       }
       PRINT_DEBUG(YELLOW "[init]: moved the state forward %.2f seconds\n" RESET, state->_timestamp - timestamp);
       thread_init_success = true;
