@@ -22,12 +22,25 @@ jobs:
 
       - name: Run multi-agent simulation
         run: |
-          mkdir -p plots
+          mkdir -p results
           podman run --rm \
-            --volume "${PWD}/plots:/open_vins_ws/plots" \
-            --workdir /open_vins_ws/plots \
+            --volume "${PWD}/results:/open_vins_ws/results" \
             open-vins:ci \
-            ros2 launch ov_msckf multi_agent_mav_sim.launch.py plotting_enable:=true
+            ros2 launch ov_msckf multi_agent_mav_sim.launch.py \
+              save_results:=true \
+              results_path:=/open_vins_ws/results
 
-      - name: Verify plotting output
-        run: find plots -mindepth 1 -maxdepth 1 -print -quit | grep --quiet .
+      - name: Verify results output
+        run: |
+          mapfile -d '' result_files < <(find results -type f -print0)
+          if (( ${#result_files[@]} == 0 )); then
+            echo "No result files were created"
+            exit 1
+          fi
+          for result_file in "${result_files[@]}"; do
+            line_count=$(wc -l < "${result_file}")
+            if (( line_count < 50 )); then
+              echo "${result_file} has ${line_count} lines; expected at least 50"
+              exit 1
+            fi
+          done

@@ -23,7 +23,7 @@ RUN git clone --branch 4.2.2 --depth 1 https://github.com/borglab/gtsam.git
 # Build & install GTSAM
 WORKDIR /gtsam/build
 RUN cmake -DCMAKE_BUILD_TYPE=Release .. && \
-  make -j"$(nproc)" && make install
+  make -j"$(nproc)" && make install && ldconfig
 
 # Copy OpenVINS
 WORKDIR /open_vins_ws
