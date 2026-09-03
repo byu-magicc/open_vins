@@ -44,8 +44,11 @@ public:
   void marginalize_landmarks(const std::vector<size_t> &feature_ids);
   void apply_pending_global_factors(double timestamp);
 
-  /** Commit one camera transaction and return the aligned navigation result. */
-  FactorGraphResult finish_update(double timestamp);
+  /** Commit one camera transaction without extracting an estimate or covariance. */
+  void finish_update();
+
+  /** Return the estimate propagated to the requested timestamp. */
+  FactorGraphResult get_estimate(double timestamp);
 
 private:
   struct Frame {
@@ -58,7 +61,6 @@ private:
   gtsam::Values current_values() const;
   Frame &ensure_frame(double timestamp);
   void commit();
-  FactorGraphResult current_estimate(double timestamp);
 
   std::unique_ptr<gtsam::ISAM2> optimizer;
   gtsam::NonlinearFactorGraph pending_factors;

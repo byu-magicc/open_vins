@@ -118,9 +118,10 @@ void VioManager::finish_factor_graph_update() {
   if (factorGraphManager == nullptr)
     return;
 
-  const FactorGraphResult graph = factorGraphManager->finish_camera_update(state->_timestamp);
+  factorGraphManager->finish_camera_update();
   if (!openvins_results.is_open())
     return;
+  const FactorGraphResult graph = factorGraphManager->get_estimate(state->_timestamp);
 
   const Eigen::Matrix<double, 15, 15> openvins_covariance = StateHelper::get_marginal_covariance(
       state, {state->_imu->q(), state->_imu->p(), state->_imu->v(), state->_imu->bg(), state->_imu->ba()});

@@ -126,11 +126,11 @@ Eigen::MatrixXd joint_marginal_covariance(const gtsam::ISAM2 &optimizer, const g
 
 FactorGraphState::FactorGraphState(const VioManagerOptions &options) {
   gtsam::ISAM2Params optimizer_parameters;
-  optimizer_parameters.relinearizeThreshold = 0.05;
-  optimizer_parameters.relinearizeSkip = 1;
+  optimizer_parameters.relinearizeThreshold = options.relinearize_threshold;
+  optimizer_parameters.relinearizeSkip = options.relinearize_skip;
   optimizer_parameters.cacheLinearizedFactors = true;
   optimizer_parameters.findUnusedFactorSlots = true;
-  optimizer_parameters.factorization = gtsam::ISAM2Params::QR;
+  optimizer_parameters.factorization = options.use_qr ? gtsam::ISAM2Params::QR : gtsam::ISAM2Params::CHOLESKY;
   optimizer = std::make_unique<gtsam::ISAM2>(optimizer_parameters);
 
   gravity = options.gravity_mag;
@@ -456,11 +456,6 @@ void FactorGraphState::add_visual_factors(const FactorGraphVisualUpdate &update)
                                                                     camera_calibrations.at(observation.camera_id), sigma);
       pending_factors.push_back(factor);
     }
-    // StateHelper initializes delayed SLAM features sequentially, updating the
-    // navigation state and covariance between features. Preserve that ordering
-    // instead of turning the entire delayed-initialization batch into one solve.
-    if (update.type == FactorGraphVisualUpdateType::PERSISTENT_INITIALIZATION)
-      commit();
   }
 }
 
@@ -508,11 +503,12 @@ void FactorGraphState::apply_pending_global_factors(double timestamp) {
   commit();
 }
 
-FactorGraphResult FactorGraphState::current_estimate(double timestamp) {
+FactorGraphResult FactorGraphState::get_estimate(double timestamp) {
+  std::lock_guard<std::mutex> lock(mutex);
   FactorGraphResult estimate;
-  estimate.timestamp = timestamp;
-  if (!initialized || frames.empty())
+  if (!initialized || failed || frames.empty())
     return estimate;
+  estimate.timestamp = timestamp;
   const gtsam::Values values = optimizer->calculateEstimate();
   const Frame &frame = frames.rbegin()->second;
   const gtsam::Pose3 frame_pose = values.at<gtsam::Pose3>(frame.pose_key);
@@ -615,12 +611,9 @@ FactorGraphResult FactorGraphState::current_estimate(double timestamp) {
   return estimate;
 }
 
-FactorGraphResult FactorGraphState::finish_update(double timestamp) {
+void FactorGraphState::finish_update() {
   std::lock_guard<std::mutex> lock(mutex);
   if (!initialized)
-    return FactorGraphResult();
+    return;
   commit();
-  if (failed)
-    return FactorGraphResult();
-  return current_estimate(timestamp);
 }

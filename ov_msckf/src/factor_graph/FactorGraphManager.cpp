@@ -79,4 +79,6 @@ void FactorGraphManager::marginalize_landmarks(const std::vector<size_t> &featur
 
 void FactorGraphManager::apply_pending_global_factors(double timestamp) { state->apply_pending_global_factors(timestamp); }
 
-FactorGraphResult FactorGraphManager::finish_camera_update(double timestamp) { return state->finish_update(timestamp); }
+void FactorGraphManager::finish_camera_update() { state->finish_update(); }
+
+FactorGraphResult FactorGraphManager::get_estimate(double timestamp) { return state->get_estimate(timestamp); }

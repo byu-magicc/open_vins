@@ -97,6 +97,15 @@ struct VioManagerOptions {
   /// If the passive factor-graph estimator interface should receive accepted measurements
   bool use_factor_graph = false;
 
+  /// Number of iSAM2 updates between relinearization checks
+  int relinearize_skip = 10;
+
+  /// Change in a variable required for iSAM2 to relinearize it
+  double relinearize_threshold = 0.1;
+
+  /// Use QR factorization in iSAM2 instead of Cholesky
+  bool use_qr = true;
+
   /// If aligned OpenVINS, factor-graph, and ground-truth results should be saved
   bool save_results = false;
 
@@ -136,6 +145,9 @@ struct VioManagerOptions {
       parser->parse_config("zupt_max_disparity", zupt_max_disparity);
       parser->parse_config("zupt_only_at_beginning", zupt_only_at_beginning);
       parser->parse_config("use_factor_graph", use_factor_graph, false);
+      parser->parse_config("relinearize_skip", relinearize_skip, false);
+      parser->parse_config("relinearize_threshold", relinearize_threshold, false);
+      parser->parse_config("use_qr", use_qr, false);
       parser->parse_config("save_results", save_results, false);
       parser->parse_config("results_path", results_path, false);
       parser->parse_config("record_timing_information", record_timing_information);
@@ -148,6 +160,9 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - zupt_max_disparity: %.4f\n", zupt_max_disparity);
     PRINT_DEBUG("  - zupt_only_at_beginning?: %d\n", zupt_only_at_beginning);
     PRINT_DEBUG("  - use factor graph?: %d\n", use_factor_graph);
+    PRINT_DEBUG("  - factor graph relinearize skip: %d\n", relinearize_skip);
+    PRINT_DEBUG("  - factor graph relinearize threshold: %.3f\n", relinearize_threshold);
+    PRINT_DEBUG("  - factor graph uses QR?: %d\n", use_qr);
     PRINT_DEBUG("  - save results?: %d\n", save_results);
     PRINT_DEBUG("  - results path: %s\n", results_path.c_str());
     PRINT_DEBUG("  - record timing?: %d\n", (int)record_timing_information);

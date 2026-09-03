@@ -68,6 +68,21 @@ launch_args = [
         description="enable the passive factor-graph estimator interface",
     ),
     DeclareLaunchArgument(
+        name="relinearize_skip",
+        default_value="10",
+        description="number of iSAM2 updates between relinearization checks",
+    ),
+    DeclareLaunchArgument(
+        name="relinearize_threshold",
+        default_value="0.1",
+        description="change in a variable required for iSAM2 to relinearize it",
+    ),
+    DeclareLaunchArgument(
+        name="use_qr",
+        default_value="false",
+        description="use QR factorization in iSAM2 instead of Cholesky",
+    ),
+    DeclareLaunchArgument(
         name="save_results",
         default_value="false",
         description="save aligned OpenVINS, factor-graph, and ground-truth CSV files",
@@ -273,6 +288,9 @@ def launch_setup(context):
             {"max_slam": LaunchConfiguration("num_slam")},
             {"use_stereo": LaunchConfiguration("use_stereo")},
             {"use_factor_graph": LaunchConfiguration("use_factor_graph")},
+            {"relinearize_skip": LaunchConfiguration("relinearize_skip")},
+            {"relinearize_threshold": LaunchConfiguration("relinearize_threshold")},
+            {"use_qr": LaunchConfiguration("use_qr")},
             {"save_results": LaunchConfiguration("save_results")},
             {"results_path": LaunchConfiguration("results_path")},
             {"max_cameras": LaunchConfiguration("max_cameras")},

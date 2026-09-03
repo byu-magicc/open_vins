@@ -9,6 +9,9 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('save_results', default_value='false'),
         DeclareLaunchArgument('results_path', default_value='results'),
+        DeclareLaunchArgument('relinearize_skip', default_value='10'),
+        DeclareLaunchArgument('relinearize_threshold', default_value='0.1'),
+        DeclareLaunchArgument('use_qr', default_value='false'),
 
         # Instance 0
         IncludeLaunchDescription(
@@ -20,6 +23,9 @@ def generate_launch_description():
                 'max_cameras': '1',
                 'use_stereo': 'false',
                 'use_factor_graph': 'true',
+                'relinearize_skip': LaunchConfiguration('relinearize_skip'),
+                'relinearize_threshold': LaunchConfiguration('relinearize_threshold'),
+                'use_qr': LaunchConfiguration('use_qr'),
                 'save_results': LaunchConfiguration('save_results'),
                 'results_path': LaunchConfiguration('results_path'),
                 'use_ground_plane_features': 'true',
@@ -38,6 +44,9 @@ def generate_launch_description():
                 'max_cameras': '1',
                 'use_stereo': 'false',
                 'use_factor_graph': 'true',
+                'relinearize_skip': LaunchConfiguration('relinearize_skip'),
+                'relinearize_threshold': LaunchConfiguration('relinearize_threshold'),
+                'use_qr': LaunchConfiguration('use_qr'),
                 'save_results': LaunchConfiguration('save_results'),
                 'results_path': LaunchConfiguration('results_path'),
                 'use_ground_plane_features': 'true',
@@ -56,6 +65,9 @@ def generate_launch_description():
                 'max_cameras': '1',
                 'use_stereo': 'false',
                 'use_factor_graph': 'true',
+                'relinearize_skip': LaunchConfiguration('relinearize_skip'),
+                'relinearize_threshold': LaunchConfiguration('relinearize_threshold'),
+                'use_qr': LaunchConfiguration('use_qr'),
                 'save_results': LaunchConfiguration('save_results'),
                 'results_path': LaunchConfiguration('results_path'),
                 'use_ground_plane_features': 'true',
