@@ -1,4 +1,6 @@
-This fork of OpenVINS attempts to create a multi-agent GTSAM-based factor graph that mimics the single-agent performance of OpenVINS while allowing multi-agent cooperation. To use, build and run `Containerfile` with Podman or a similar program:
+This fork of OpenVINS attempts to create a multi-agent GTSAM-based factor graph that mimics the single-agent performance of OpenVINS while allowing multi-agent cooperation. This implementation is heavily vibe coded (for research speed) and as such I cannot ensure it's complete accuracy and do not recommend using to control real hardware without rigorous testing and validation.
+
+To use, build and run `Containerfile` with Podman or a similar program:
 
 ```bash
 podman build -t open_vins . &&
