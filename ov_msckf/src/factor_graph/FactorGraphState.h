@@ -39,6 +39,7 @@ public:
   void feed_imu(const ov_core::ImuData &message);
   void feed_gps(const ov_core::GPSData &message);
   void initialize(const FactorGraphInitialization &initialization);
+  void materialize_clone(double timestamp);
   void add_zero_velocity_factor(double timestamp);
   void add_visual_factors(const FactorGraphVisualUpdate &update);
   void marginalize_landmarks(const std::vector<size_t> &feature_ids);

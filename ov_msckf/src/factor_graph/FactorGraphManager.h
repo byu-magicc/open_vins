@@ -57,6 +57,9 @@ public:
   /** @brief Seed the graph from the complete successful OpenVINS state and covariance. */
   void initialize(const std::shared_ptr<State> &openvins_state);
 
+  /** @brief Materialize the navigation state for an OpenVINS camera clone. */
+  void materialize_clone(double timestamp);
+
   /** @brief Incorporate a zero-velocity constraint accepted by OpenVINS. */
   void add_zero_velocity_factor(double timestamp);
 

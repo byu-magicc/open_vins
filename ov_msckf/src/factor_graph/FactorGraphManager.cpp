@@ -71,6 +71,8 @@ void FactorGraphManager::initialize(const std::shared_ptr<State> &openvins_state
   state->initialize(initialization);
 }
 
+void FactorGraphManager::materialize_clone(double timestamp) { state->materialize_clone(timestamp); }
+
 void FactorGraphManager::add_zero_velocity_factor(double timestamp) { state->add_zero_velocity_factor(timestamp); }
 
 void FactorGraphManager::add_visual_factors(const FactorGraphVisualUpdate &update) { state->add_visual_factors(update); }

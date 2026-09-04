@@ -319,6 +319,13 @@ FactorGraphState::Frame &FactorGraphState::ensure_frame(double timestamp) {
   return frames.at(timestamp);
 }
 
+void FactorGraphState::materialize_clone(double timestamp) {
+  std::lock_guard<std::mutex> lock(mutex);
+  if (!initialized || failed || frames.find(timestamp) != frames.end())
+    return;
+  ensure_frame(timestamp);
+}
+
 void FactorGraphState::add_zero_velocity_factor(double timestamp) {
   std::lock_guard<std::mutex> lock(mutex);
   if (!initialized || failed)

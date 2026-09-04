@@ -485,6 +485,9 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if (state->_timestamp != message.timestamp) {
     propagator->propagate_and_clone(state, message.timestamp);
   }
+  if (factorGraphManager != nullptr && state->_timestamp == message.timestamp) {
+    factorGraphManager->materialize_clone(message.timestamp);
+  }
   rT3 = boost::posix_time::microsec_clock::local_time();
 
   // If we have not reached max clones, we should just return...
