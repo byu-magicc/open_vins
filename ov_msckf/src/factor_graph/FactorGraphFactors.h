@@ -14,6 +14,7 @@
 #include "utils/sensor_data.h"
 
 #include <gtsam/geometry/Pose3.h>
+#include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/navigation/ImuBias.h>
 #include <gtsam/navigation/ImuFactor.h>
 #include <gtsam/nonlinear/NonlinearFactor.h>
@@ -110,11 +111,15 @@ public:
                                 boost::optional<std::vector<gtsam::Matrix> &> jacobians = boost::none) const override;
   gtsam::NonlinearFactor::shared_ptr clone() const override;
 
+  /** Freeze GTSAM's preintegrated process covariance at the factor's creation linearization point. */
+  void freeze_noise_model(const gtsam::Values &values, const gtsam::imuBias::ConstantBias &bias_i);
+
   gtsam::NavState predict(const gtsam::Values &values, const gtsam::NavState &state_i, const gtsam::imuBias::ConstantBias &bias_i) const;
 
 private:
   gtsam::PreintegratedImuMeasurements preintegrate(const gtsam::Values &values, const gtsam::imuBias::ConstantBias &bias,
-                                                   std::map<gtsam::Key, gtsam::Matrix> *measurement_sensitivities = nullptr) const;
+                                                   std::map<gtsam::Key, gtsam::Matrix> *measurement_sensitivities,
+                                                   Eigen::Matrix<double, 15, 15> *process_covariance) const;
 
   gtsam::Key pose_i;
   gtsam::Key velocity_i;
@@ -132,6 +137,8 @@ private:
   double gravity;
   double sigma_gyro;
   double sigma_accel;
+  double sigma_gyro_bias;
+  double sigma_accel_bias;
 };
 
 /** Raw stationary-IMU factor matching the default OpenVINS ZUPT update. */

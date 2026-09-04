@@ -300,6 +300,7 @@ FactorGraphState::Frame &FactorGraphState::ensure_frame(double timestamp) {
       previous.pose_key, previous.velocity_key, previous.bias_key, pose_key(next_frame_index), velocity_key(next_frame_index),
       bias_key(next_frame_index), previous.timestamp, timestamp, imu_buffer, imu_calibration, gravity, sigma_gyro, sigma_accel,
       sigma_gyro_bias, sigma_accel_bias);
+  factor->freeze_noise_model(values, previous_bias);
   const gtsam::NavState prediction = factor->predict(values, gtsam::NavState(previous_pose, previous_velocity), previous_bias);
 
   Frame frame;
@@ -527,6 +528,7 @@ FactorGraphResult FactorGraphState::get_estimate(double timestamp) {
     FactorGraphImuFactor propagation(frame.pose_key, frame.velocity_key, frame.bias_key, propagated_pose_key, propagated_velocity_key,
                                      propagated_bias_key, frame.timestamp, timestamp, imu_buffer, imu_calibration, gravity, sigma_gyro,
                                      sigma_accel, sigma_gyro_bias, sigma_accel_bias);
+    propagation.freeze_noise_model(values, bias);
     const gtsam::NavState propagated = propagation.predict(values, gtsam::NavState(pose, velocity), bias);
     pose = propagated.pose();
     velocity = propagated.velocity();

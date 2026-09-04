@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <set>
 
 using namespace ov_msckf;
@@ -303,17 +304,6 @@ gtsam::KeyVector imu_keys(gtsam::Key pose_i, gtsam::Key velocity_i, gtsam::Key b
   return keys;
 }
 
-gtsam::SharedNoiseModel imu_noise(double elapsed, double sigma_gyro, double sigma_accel, double sigma_gyro_bias, double sigma_accel_bias) {
-  elapsed = std::max(elapsed, 1e-6);
-  gtsam::Vector sigmas(15);
-  sigmas.segment<3>(0).setConstant(std::max(sigma_gyro * std::sqrt(elapsed), 1e-9));
-  sigmas.segment<3>(3).setConstant(std::max(sigma_accel * elapsed * std::sqrt(elapsed) / std::sqrt(3.0), 1e-9));
-  sigmas.segment<3>(6).setConstant(std::max(sigma_accel * std::sqrt(elapsed), 1e-9));
-  sigmas.segment<3>(9).setConstant(std::max(sigma_accel_bias * std::sqrt(elapsed), 1e-9));
-  sigmas.segment<3>(12).setConstant(std::max(sigma_gyro_bias * std::sqrt(elapsed), 1e-9));
-  return gtsam::noiseModel::Diagonal::Sigmas(sigmas);
-}
-
 } // namespace
 
 FactorGraphProjectionFactor::FactorGraphProjectionFactor(gtsam::Key landmark_key_, const FactorGraphObservation &observation_,
@@ -426,15 +416,16 @@ FactorGraphImuFactor::FactorGraphImuFactor(gtsam::Key pose_i_, gtsam::Key veloci
                                            const std::vector<ov_core::ImuData> &imu_data_, const FactorGraphImuCalibration &calibration_,
                                            double gravity_, double sigma_gyro_, double sigma_accel_, double sigma_gyro_bias_,
                                            double sigma_accel_bias_)
-    : gtsam::NoiseModelFactor(imu_noise(camera_time_j_ - camera_time_i_, sigma_gyro_, sigma_accel_, sigma_gyro_bias_, sigma_accel_bias_),
+    : gtsam::NoiseModelFactor(gtsam::noiseModel::Unit::Create(15),
                               imu_keys(pose_i_, velocity_i_, bias_i_, pose_j_, velocity_j_, bias_j_, calibration_)),
       pose_i(pose_i_), velocity_i(velocity_i_), bias_i(bias_i_), pose_j(pose_j_), velocity_j(velocity_j_), bias_j(bias_j_),
       camera_time_i(camera_time_i_), camera_time_j(camera_time_j_), imu_data(&imu_data_), calibration(calibration_), gravity(gravity_),
-      sigma_gyro(sigma_gyro_), sigma_accel(sigma_accel_) {}
+      sigma_gyro(sigma_gyro_), sigma_accel(sigma_accel_), sigma_gyro_bias(sigma_gyro_bias_), sigma_accel_bias(sigma_accel_bias_) {}
 
-gtsam::PreintegratedImuMeasurements
-FactorGraphImuFactor::preintegrate(const gtsam::Values &values, const gtsam::imuBias::ConstantBias &bias,
-                                   std::map<gtsam::Key, gtsam::Matrix> *measurement_sensitivities) const {
+gtsam::PreintegratedImuMeasurements FactorGraphImuFactor::preintegrate(const gtsam::Values &values,
+                                                                       const gtsam::imuBias::ConstantBias &bias,
+                                                                       std::map<gtsam::Key, gtsam::Matrix> *measurement_sensitivities,
+                                                                       Eigen::Matrix<double, 15, 15> *process_covariance) const {
   const gtsam::Vector dw = calibration.estimate_intrinsics ? values.at<gtsam::Vector>(calibration.dw_key) : calibration.dw;
   const gtsam::Vector da = calibration.estimate_intrinsics ? values.at<gtsam::Vector>(calibration.da_key) : calibration.da;
   const gtsam::Vector tg = calibration.estimate_gravity_sensitivity ? values.at<gtsam::Vector>(calibration.tg_key) : calibration.tg;
@@ -451,12 +442,34 @@ FactorGraphImuFactor::preintegrate(const gtsam::Values &values, const gtsam::imu
   const Eigen::Matrix3d dw_matrix = calibration_matrix(calibration.kalibr_model, dw);
   const Eigen::Matrix3d da_matrix = calibration_matrix(calibration.kalibr_model, da);
   const Eigen::Matrix3d tg_matrix = gravity_sensitivity_matrix(tg);
+  const Eigen::Matrix3d accel_calibration = accel_to_imu * da_matrix;
+  const Eigen::Matrix3d gyro_calibration = gyro_to_imu * dw_matrix;
 
   auto parameters = gtsam::PreintegrationParams::MakeSharedU(gravity);
-  parameters->gyroscopeCovariance = sigma_gyro * sigma_gyro * Eigen::Matrix3d::Identity();
-  parameters->accelerometerCovariance = sigma_accel * sigma_accel * Eigen::Matrix3d::Identity();
-  parameters->integrationCovariance = 1e-10 * Eigen::Matrix3d::Identity();
   gtsam::PreintegratedImuMeasurements preintegrated(parameters, gtsam::imuBias::ConstantBias());
+  boost::shared_ptr<gtsam::PreintegrationCombinedParams> covariance_parameters;
+  std::unique_ptr<gtsam::PreintegratedCombinedMeasurements> covariance_preintegrated;
+  if (process_covariance) {
+    covariance_parameters = gtsam::PreintegrationCombinedParams::MakeSharedU(gravity);
+    const Eigen::Matrix3d accel_covariance =
+        sigma_accel * sigma_accel * accel_to_imu * da_matrix * da_matrix.transpose() * accel_to_imu.transpose();
+    // Gravity sensitivity makes accelerometer noise enter the corrected gyro.
+    // GTSAM has no accelerometer/gyro cross-noise parameter, but retaining its
+    // contribution to the gyro marginal is more accurate than treating the
+    // corrected gyro noise as isotropic.
+    const Eigen::Matrix3d gyro_covariance =
+        sigma_gyro * sigma_gyro * gyro_to_imu * dw_matrix * dw_matrix.transpose() * gyro_to_imu.transpose() +
+        gyro_to_imu * dw_matrix * tg_matrix * accel_covariance * tg_matrix.transpose() * dw_matrix.transpose() * gyro_to_imu.transpose();
+    covariance_parameters->accelerometerCovariance = accel_covariance;
+    covariance_parameters->gyroscopeCovariance = gyro_covariance;
+    covariance_parameters->integrationCovariance = 1e-10 * Eigen::Matrix3d::Identity();
+    covariance_parameters->biasAccCovariance = sigma_accel_bias * sigma_accel_bias * accel_calibration * accel_calibration.transpose();
+    covariance_parameters->biasOmegaCovariance = sigma_gyro_bias * sigma_gyro_bias * gyro_calibration * gyro_calibration.transpose();
+    // The graph explicitly estimates the starting bias, so its uncertainty is
+    // not independent process noise inside this factor.
+    covariance_parameters->biasAccOmegaInt.setZero();
+    covariance_preintegrated = std::make_unique<gtsam::PreintegratedCombinedMeasurements>(covariance_parameters);
+  }
   const auto selected = select_imu(*imu_data, camera_time_i + time_offset, camera_time_j + time_offset);
   if (measurement_sensitivities) {
     measurement_sensitivities->clear();
@@ -472,8 +485,6 @@ FactorGraphImuFactor::preintegrate(const gtsam::Values &values, const gtsam::imu
       measurement_sensitivities->insert({calibration.time_offset_key, gtsam::Matrix::Zero(9, 1)});
   }
 
-  const Eigen::Matrix3d accel_calibration = accel_to_imu * da_matrix;
-  const Eigen::Matrix3d gyro_calibration = gyro_to_imu * dw_matrix;
   for (size_t index = 0; index + 1 < selected.size(); index++) {
     const auto &first = selected.at(index);
     const auto &second = selected.at(index + 1);
@@ -483,6 +494,8 @@ FactorGraphImuFactor::preintegrate(const gtsam::Values &values, const gtsam::imu
     const Eigen::Vector3d corrected_accel = accel_calibration * raw_accel;
     const Eigen::Vector3d raw_gyro = 0.5 * (first.data.wm + second.data.wm) - bias.gyroscope() - tg_matrix * corrected_accel;
     const Eigen::Vector3d corrected_gyro = gyro_calibration * raw_gyro;
+    if (covariance_preintegrated)
+      covariance_preintegrated->integrateMeasurement(corrected_accel, corrected_gyro, dt);
 
     std::map<gtsam::Key, gtsam::Matrix> accel_jacobians;
     std::map<gtsam::Key, gtsam::Matrix> gyro_jacobians;
@@ -544,7 +557,25 @@ FactorGraphImuFactor::preintegrate(const gtsam::Values &values, const gtsam::imu
       }
     }
   }
+  if (process_covariance) {
+    // Combined preintegration treats its bias errors in the already-corrected
+    // sensor coordinates. The graph bias variables remain in raw IMU
+    // coordinates, so transform the accumulated covariance back to match the
+    // custom factor residual and Jacobians.
+    Eigen::Matrix<double, 15, 15> raw_bias_transform = Eigen::Matrix<double, 15, 15>::Identity();
+    raw_bias_transform.block<3, 3>(9, 9) = accel_calibration.inverse();
+    raw_bias_transform.block<3, 3>(12, 12) = gyro_calibration.inverse();
+    *process_covariance = raw_bias_transform * covariance_preintegrated->preintMeasCov() * raw_bias_transform.transpose();
+  }
   return preintegrated;
+}
+
+void FactorGraphImuFactor::freeze_noise_model(const gtsam::Values &values, const gtsam::imuBias::ConstantBias &bias_start) {
+  Eigen::Matrix<double, 15, 15> covariance;
+  preintegrate(values, bias_start, nullptr, &covariance);
+  covariance = 0.5 * (covariance + covariance.transpose());
+  covariance.diagonal().array() += 1e-14;
+  noiseModel_ = gtsam::noiseModel::Gaussian::Covariance(covariance);
 }
 
 gtsam::Vector FactorGraphImuFactor::unwhitenedError(const gtsam::Values &values,
@@ -552,12 +583,14 @@ gtsam::Vector FactorGraphImuFactor::unwhitenedError(const gtsam::Values &values,
   const auto bias_start = values.at<gtsam::imuBias::ConstantBias>(bias_i);
   const auto bias_end = values.at<gtsam::imuBias::ConstantBias>(bias_j);
   std::map<gtsam::Key, gtsam::Matrix> measurement_sensitivities;
-  const auto preintegrated = preintegrate(values, bias_start, jacobians ? &measurement_sensitivities : nullptr);
+  const auto preintegrated = preintegrate(values, bias_start, jacobians ? &measurement_sensitivities : nullptr, nullptr);
   gtsam::Vector error(15);
   error.head<9>() = preintegrated.computeErrorAndJacobians(values.at<gtsam::Pose3>(pose_i), values.at<gtsam::Vector3>(velocity_i),
                                                            values.at<gtsam::Pose3>(pose_j), values.at<gtsam::Vector3>(velocity_j),
                                                            gtsam::imuBias::ConstantBias());
-  error.tail<6>() = bias_end.vector() - bias_start.vector();
+  // Match CombinedImuFactor's residual convention so the native covariance's
+  // navigation/bias cross terms have the correct sign.
+  error.tail<6>() = bias_start.vector() - bias_end.vector();
   if (jacobians) {
     const gtsam::NavState state_i(values.at<gtsam::Pose3>(pose_i), values.at<gtsam::Vector3>(velocity_i));
     const gtsam::NavState state_j(values.at<gtsam::Pose3>(pose_j), values.at<gtsam::Vector3>(velocity_j));
@@ -571,7 +604,7 @@ gtsam::Vector FactorGraphImuFactor::unwhitenedError(const gtsam::Values &values,
     jacobians->push_back(velocity_i_jacobian);
     gtsam::Matrix bias_i_jacobian = gtsam::Matrix::Zero(15, 6);
     bias_i_jacobian.topRows<9>() = derivatives.delta * measurement_sensitivities.at(bias_i);
-    bias_i_jacobian.bottomRows<6>() = -gtsam::Matrix6::Identity();
+    bias_i_jacobian.bottomRows<6>() = gtsam::Matrix6::Identity();
     jacobians->push_back(bias_i_jacobian);
     gtsam::Matrix pose_j_jacobian = gtsam::Matrix::Zero(15, 6);
     pose_j_jacobian.topRows<9>() = derivatives.state_j.leftCols<6>();
@@ -580,7 +613,7 @@ gtsam::Vector FactorGraphImuFactor::unwhitenedError(const gtsam::Values &values,
     velocity_j_jacobian.topRows<9>() = derivatives.state_j.rightCols<3>() * state_j.R().transpose();
     jacobians->push_back(velocity_j_jacobian);
     gtsam::Matrix bias_j_jacobian = gtsam::Matrix::Zero(15, 6);
-    bias_j_jacobian.bottomRows<6>() = gtsam::Matrix6::Identity();
+    bias_j_jacobian.bottomRows<6>() = -gtsam::Matrix6::Identity();
     jacobians->push_back(bias_j_jacobian);
     for (size_t key_index = 6; key_index < keys_.size(); key_index++) {
       const gtsam::Key key = keys_.at(key_index);
@@ -594,7 +627,7 @@ gtsam::Vector FactorGraphImuFactor::unwhitenedError(const gtsam::Values &values,
 
 gtsam::NavState FactorGraphImuFactor::predict(const gtsam::Values &values, const gtsam::NavState &state_i,
                                               const gtsam::imuBias::ConstantBias &bias_start) const {
-  return preintegrate(values, bias_start).predict(state_i, gtsam::imuBias::ConstantBias());
+  return preintegrate(values, bias_start, nullptr, nullptr).predict(state_i, gtsam::imuBias::ConstantBias());
 }
 
 gtsam::NonlinearFactor::shared_ptr FactorGraphImuFactor::clone() const {
