@@ -22,25 +22,34 @@ jobs:
 
       - name: Run multi-agent simulation
         run: |
-          mkdir -p results
+          mkdir -p runs
           podman run --rm \
-            --volume "${PWD}/results:/open_vins_ws/results" \
+            --volume "${PWD}/runs:/open_vins_ws/runs" \
             open-vins:ci \
-            ros2 launch ov_msckf multi_agent_mav_sim.launch.py \
-              save_results:=true \
-              results_path:=/open_vins_ws/results
+            ./src/open_vins/run_multi_agent_experiment.sh
 
-      - name: Verify results output
+      - name: Verify results and plots
         run: |
-          mapfile -d '' result_files < <(find results -type f -print0)
-          if (( ${#result_files[@]} == 0 )); then
-            echo "No result files were created"
+          data_found=false
+          while IFS= read -r -d '' result_file; do
+            if (( $(wc -l < "${result_file}") >= 25 )); then
+              data_found=true
+              break
+            fi
+          done < <(find runs -type f -path '*/results/*' -print0)
+          if [[ "${data_found}" != true ]]; then
+            echo "No result file with at least 25 lines was created"
             exit 1
           fi
-          for result_file in "${result_files[@]}"; do
-            line_count=$(wc -l < "${result_file}")
-            if (( line_count < 50 )); then
-              echo "${result_file} has ${line_count} lines; expected at least 50"
-              exit 1
+
+          plot_found=false
+          while IFS= read -r -d '' plot_file; do
+            if (( $(wc -c < "${plot_file}") >= 10000 )); then
+              plot_found=true
+              break
             fi
-          done
+          done < <(find runs -type f -path '*/plots/*.svg' -print0)
+          if [[ "${plot_found}" != true ]]; then
+            echo "No non-empty SVG plot of at least 10 KB was created"
+            exit 1
+          fi
