@@ -21,10 +21,16 @@
 
 #include "print.h"
 
+#include <mutex>
+#include <vector>
+
 using namespace ov_core;
 
 // Need to define the static variable for everything to work
 Printer::PrintLevel Printer::current_print_level = PrintLevel::INFO;
+thread_local std::string Printer::thread_label;
+
+void Printer::setThreadLabel(const std::string &label) { thread_label = label; }
 
 void Printer::setPrintLevel(const std::string &level) {
   if (level == "ALL")
@@ -40,7 +46,11 @@ void Printer::setPrintLevel(const std::string &level) {
   else if (level == "SILENT")
     setPrintLevel(PrintLevel::SILENT);
   else {
+    if (!thread_label.empty())
+      std::cout << "[" << thread_label << "] ";
     std::cout << "Invalid print level requested: " << level << std::endl;
+    if (!thread_label.empty())
+      std::cout << "[" << thread_label << "] ";
     std::cout << "Valid levels are: ALL, DEBUG, INFO, WARNING, ERROR, SILENT" << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -48,6 +58,8 @@ void Printer::setPrintLevel(const std::string &level) {
 
 void Printer::setPrintLevel(PrintLevel level) {
   Printer::current_print_level = level;
+  if (!thread_label.empty())
+    std::cout << "[" << thread_label << "] ";
   std::cout << "Setting printing level to: ";
   switch (current_print_level) {
   case PrintLevel::ALL:
@@ -80,6 +92,58 @@ void Printer::setPrintLevel(PrintLevel level) {
 void Printer::debugPrint(PrintLevel level, const char location[], const char line[], const char *format, ...) {
   // Only print for the current debug level
   if (static_cast<int>(level) < static_cast<int>(Printer::current_print_level)) {
+    return;
+  }
+
+  // Keep messages from concurrent estimators together, including multiline diagnostics.
+  static std::mutex output_mutex;
+  std::lock_guard<std::mutex> lock(output_mutex);
+  if (!thread_label.empty()) {
+    va_list args;
+    va_start(args, format);
+    va_list copy;
+    va_copy(copy, args);
+    const int length = vsnprintf(nullptr, 0, format, copy);
+    va_end(copy);
+    if (length < 0) {
+      va_end(args);
+      return;
+    }
+    std::vector<char> message(length + 1);
+    vsnprintf(message.data(), message.size(), format, args);
+    va_end(args);
+
+    // Some callers print a row in several calls. Continue it unless another agent has printed.
+    static bool line_start = true;
+    static std::string last_label;
+    if (!line_start && last_label != thread_label) {
+      putchar('\n');
+      line_start = true;
+    }
+    for (int index = 0; index < length; index++) {
+      // Color reset codes are often placed after a newline. Print them without
+      // treating them as the beginning of the next log line.
+      if (line_start && message[index] == '\033' && index + 1 < length && message[index + 1] == '[') {
+        putchar(message[index]);
+        putchar(message[++index]);
+        while (++index < length) {
+          putchar(message[index]);
+          if (message[index] >= '@' && message[index] <= '~')
+            break;
+        }
+        continue;
+      }
+      if (line_start) {
+        printf("[%s] ", thread_label.c_str());
+        if (current_print_level <= PrintLevel::DEBUG) {
+          const std::string path(location);
+          printf("%s:%s ", path.substr(path.find_last_of("/\\") + 1).c_str(), line);
+        }
+      }
+      putchar(message[index]);
+      line_start = message[index] == '\n';
+    }
+    last_label = thread_label;
     return;
   }
 

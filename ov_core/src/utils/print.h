@@ -65,6 +65,9 @@ public:
    */
   static void setPrintLevel(PrintLevel level);
 
+  /// Label logs from the calling thread. An empty label preserves the usual output.
+  static void setThreadLabel(const std::string &label);
+
   /**
    * @brief The print function that prints to stdout.
    * @param level the print level for this print call
@@ -78,6 +81,7 @@ public:
   static PrintLevel current_print_level;
 
 private:
+  static thread_local std::string thread_label;
   /// The max length for the file path.  This is to avoid very long file paths from
   static constexpr uint32_t MAX_FILE_PATH_LEGTH = 30;
 };

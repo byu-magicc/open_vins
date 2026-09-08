@@ -11,6 +11,9 @@ launch_args = [
     DeclareLaunchArgument(
         name="rviz_enable", default_value="false", description="enable rviz node"
     ),
+    DeclareLaunchArgument(name="simulation_executable", default_value="run_simulation"),
+    DeclareLaunchArgument(name="agent_names", default_value="center,left,right"),
+    DeclareLaunchArgument(name="datasets", default_value=""),
 
     DeclareLaunchArgument(
         name="verbosity",
@@ -245,7 +248,7 @@ def launch_setup(context):
     master_node = Node(
         name="ov_msckf",
         package="ov_msckf",
-        executable="run_simulation",
+        executable=LaunchConfiguration("simulation_executable"),
         namespace=LaunchConfiguration("namespace"),
         output='screen',
         on_exit=Shutdown(),
@@ -263,6 +266,12 @@ def launch_setup(context):
             {"sim_freq_cam": LaunchConfiguration("freq_cam")},
             {"sim_freq_imu": LaunchConfiguration("freq_imu")},
             {"sim_do_perturbation": LaunchConfiguration("sim_do_perturbation")},
+            {"agent_names": LaunchConfiguration("agent_names").perform(context).split(",")},
+            {"trajectory_paths": [
+                os.path.join(get_package_share_directory("ov_data"), "sim", dataset.strip())
+                for dataset in (LaunchConfiguration("datasets").perform(context)
+                                or LaunchConfiguration("dataset").perform(context)).split(",")
+            ]},
 
             {"sim_min_feature_gen_dist": LaunchConfiguration("feat_dist_min")},
             {"sim_max_feature_gen_dist": LaunchConfiguration("feat_dist_max")},
@@ -306,6 +315,15 @@ def launch_setup(context):
         package="rviz2",
         executable="rviz2",
         condition=IfCondition(LaunchConfiguration("rviz_enable")),
+        # The saved RViz displays use /ov_msckf; follow the simulation namespace.
+        remappings=[
+            ("/ov_msckf/" + topic,
+             os.path.join("/", LaunchConfiguration("namespace").perform(context).strip("/"), topic))
+            for topic in [
+                "trackhist", "loop_depth_colored", "pathimu", "pathgt",
+                "points_msckf", "points_slam", "points_aruco", "loop_feats", "points_sim",
+            ]
+        ],
         arguments=[
             "-d"
             + os.path.join(

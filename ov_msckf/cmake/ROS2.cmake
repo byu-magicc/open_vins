@@ -104,6 +104,11 @@ ament_target_dependencies(run_simulation ${ament_libraries})
 target_link_libraries(run_simulation ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS run_simulation DESTINATION lib/${PROJECT_NAME})
 
+add_executable(run_multi_agent_simulation src/run_multi_agent_simulation.cpp)
+ament_target_dependencies(run_multi_agent_simulation ${ament_libraries})
+target_link_libraries(run_multi_agent_simulation ov_msckf_lib ${thirdparty_libraries})
+install(TARGETS run_multi_agent_simulation DESTINATION lib/${PROJECT_NAME})
+
 add_executable(test_sim_meas src/test_sim_meas.cpp)
 ament_target_dependencies(test_sim_meas ${ament_libraries})
 target_link_libraries(test_sim_meas ov_msckf_lib ${thirdparty_libraries})
