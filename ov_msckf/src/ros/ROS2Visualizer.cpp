@@ -36,7 +36,8 @@ using namespace ov_type;
 using namespace ov_msckf;
 
 ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_ptr<VioManager> app, std::shared_ptr<Simulator> sim)
-    : _node(node), _app(app), _sim(sim), thread_update_running(false) {
+    : _node(node), _app(app), _sim(sim), _frame_prefix(node->get_sub_namespace().empty() ? "" : node->get_sub_namespace() + "/"),
+      thread_update_running(false) {
 
   // Setup our transform broadcaster
   mTfBr = std::make_shared<tf2_ros::TransformBroadcaster>(node);
@@ -56,7 +57,7 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
   pub_points_msckf = node->create_publisher<sensor_msgs::msg::PointCloud2>("points_msckf", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_points_msckf->get_topic_name());
   pub_points_slam = node->create_publisher<sensor_msgs::msg::PointCloud2>("points_slam", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_points_msckf->get_topic_name());
+  PRINT_DEBUG("Publishing: %s\n", pub_points_slam->get_topic_name());
   pub_points_aruco = node->create_publisher<sensor_msgs::msg::PointCloud2>("points_aruco", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_points_aruco->get_topic_name());
   pub_points_sim = node->create_publisher<sensor_msgs::msg::PointCloud2>("points_sim", 2);
@@ -297,7 +298,7 @@ void ROS2Visualizer::visualize_odometry(double timestamp) {
     odomIinM.pose.pose.position.z = state_plus(6);
 
     // The TWIST component (angular and linear velocities)
-    odomIinM.child_frame_id = "imu";
+    odomIinM.child_frame_id = _frame_prefix + "imu";
     odomIinM.twist.twist.linear.x = state_plus(7);   // vel in local frame
     odomIinM.twist.twist.linear.y = state_plus(8);   // vel in local frame
     odomIinM.twist.twist.linear.z = state_plus(9);   // vel in local frame
@@ -332,7 +333,7 @@ void ROS2Visualizer::visualize_odometry(double timestamp) {
   geometry_msgs::msg::TransformStamped trans = ROSVisualizerHelper::get_stamped_transform_from_pose(_node, odom_pose, false);
   trans.header.stamp = _node->now();
   trans.header.frame_id = "global";
-  trans.child_frame_id = "imu";
+  trans.child_frame_id = _frame_prefix + "imu";
   if (publish_global2imu_tf) {
     mTfBr->sendTransform(trans);
   }
@@ -341,8 +342,8 @@ void ROS2Visualizer::visualize_odometry(double timestamp) {
   for (const auto &calib : state->_calib_IMUtoCAM) {
     geometry_msgs::msg::TransformStamped trans_calib = ROSVisualizerHelper::get_stamped_transform_from_pose(_node, calib.second, true);
     trans_calib.header.stamp = _node->now();
-    trans_calib.header.frame_id = "imu";
-    trans_calib.child_frame_id = "cam" + std::to_string(calib.first);
+    trans_calib.header.frame_id = _frame_prefix + "imu";
+    trans_calib.child_frame_id = _frame_prefix + "cam" + std::to_string(calib.first);
     if (publish_calibration_tf) {
       mTfBr->sendTransform(trans_calib);
     }
@@ -664,7 +665,7 @@ void ROS2Visualizer::publish_images() {
   // Create our message
   std_msgs::msg::Header header;
   header.stamp = _node->now();
-  header.frame_id = "cam0";
+  header.frame_id = _frame_prefix + "cam0";
   sensor_msgs::msg::Image::SharedPtr exl_msg = cv_bridge::CvImage(header, "bgr8", img_history).toImageMsg();
 
   // Publish
@@ -760,7 +761,7 @@ void ROS2Visualizer::publish_groundtruth() {
   geometry_msgs::msg::TransformStamped trans;
   trans.header.stamp = _node->now();
   trans.header.frame_id = "global";
-  trans.child_frame_id = "truth";
+  trans.child_frame_id = _frame_prefix + "truth";
   trans.transform.rotation.x = state_gt(1, 0);
   trans.transform.rotation.y = state_gt(2, 0);
   trans.transform.rotation.z = state_gt(3, 0);
@@ -875,7 +876,7 @@ void ROS2Visualizer::publish_loopclosure_information() {
     Eigen::Vector3d p_CinI = -_app->get_state()->_calib_IMUtoCAM.at(0)->Rot().transpose() * _app->get_state()->_calib_IMUtoCAM.at(0)->pos();
     nav_msgs::msg::Odometry odometry_calib;
     odometry_calib.header = header;
-    odometry_calib.header.frame_id = "imu";
+    odometry_calib.header.frame_id = _frame_prefix + "imu";
     odometry_calib.pose.pose.position.x = p_CinI(0);
     odometry_calib.pose.pose.position.y = p_CinI(1);
     odometry_calib.pose.pose.position.z = p_CinI(2);
@@ -889,7 +890,7 @@ void ROS2Visualizer::publish_loopclosure_information() {
     bool is_fisheye = (std::dynamic_pointer_cast<ov_core::CamEqui>(_app->get_params().camera_intrinsics.at(0)) != nullptr);
     sensor_msgs::msg::CameraInfo cameraparams;
     cameraparams.header = header;
-    cameraparams.header.frame_id = "cam0";
+    cameraparams.header.frame_id = _frame_prefix + "cam0";
     cameraparams.distortion_model = is_fisheye ? "equidistant" : "plumb_bob";
     Eigen::VectorXd cparams = _app->get_state()->_cam_intrinsics.at(0)->value();
     cameraparams.d = {cparams(4), cparams(5), cparams(6), cparams(7)};
@@ -987,12 +988,12 @@ void ROS2Visualizer::publish_loopclosure_information() {
     }
 
     // Create our messages
-    header.frame_id = "cam0";
+    header.frame_id = _frame_prefix + "cam0";
     sensor_msgs::msg::Image::SharedPtr exl_msg1 =
         cv_bridge::CvImage(header, sensor_msgs::image_encodings::TYPE_16UC1, depthmap).toImageMsg();
     it_pub_loop_img_depth.publish(exl_msg1);
     header.stamp = _node->now();
-    header.frame_id = "cam0";
+    header.frame_id = _frame_prefix + "cam0";
     sensor_msgs::msg::Image::SharedPtr exl_msg2 = cv_bridge::CvImage(header, "bgr8", depthmap_viz).toImageMsg();
     it_pub_loop_img_depth_color.publish(exl_msg2);
   }

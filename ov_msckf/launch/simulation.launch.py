@@ -11,6 +11,11 @@ launch_args = [
     DeclareLaunchArgument(
         name="rviz_enable", default_value="false", description="enable rviz node"
     ),
+    DeclareLaunchArgument(
+        name="rviz_config_path",
+        default_value="",
+        description="RViz configuration file; defaults to the single-agent configuration",
+    ),
     DeclareLaunchArgument(name="simulation_executable", default_value="run_simulation"),
     DeclareLaunchArgument(name="agent_names", default_value="center,left,right"),
     DeclareLaunchArgument(name="datasets", default_value=""),
@@ -266,7 +271,10 @@ def launch_setup(context):
             {"sim_freq_cam": LaunchConfiguration("freq_cam")},
             {"sim_freq_imu": LaunchConfiguration("freq_imu")},
             {"sim_do_perturbation": LaunchConfiguration("sim_do_perturbation")},
-            {"agent_names": LaunchConfiguration("agent_names").perform(context).split(",")},
+            {"agent_names": [
+                name.strip()
+                for name in LaunchConfiguration("agent_names").perform(context).split(",")
+            ]},
             {"trajectory_paths": [
                 os.path.join(get_package_share_directory("ov_data"), "sim", dataset.strip())
                 for dataset in (LaunchConfiguration("datasets").perform(context)
@@ -308,8 +316,15 @@ def launch_setup(context):
             {"feat_rep_aruco": LaunchConfiguration("feat_rep")},
 
             {"num_pts": LaunchConfiguration("num_pts")},
+            {"visualize": LaunchConfiguration("rviz_enable")},
         ],
     )
+
+    rviz_config_path = LaunchConfiguration("rviz_config_path").perform(context)
+    if not rviz_config_path:
+        rviz_config_path = os.path.join(
+            get_package_share_directory("ov_msckf"), "launch", "display_ros2.rviz"
+        )
 
     rviz_node = Node(
         package="rviz2",
@@ -325,10 +340,8 @@ def launch_setup(context):
             ]
         ],
         arguments=[
-            "-d"
-            + os.path.join(
-                get_package_share_directory("ov_msckf"), "launch", "display_ros2.rviz"
-            ),
+            "-d",
+            rviz_config_path,
             "--ros-args",
             "--log-level",
             "warn",

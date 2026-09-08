@@ -33,6 +33,7 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include "core/VioManager.h"
+#include "ros/ROS2Visualizer.h"
 #include "sim/Simulator.h"
 #include "utils/print.h"
 #include "utils/sensor_data.h"
@@ -43,7 +44,8 @@ using namespace ov_msckf;
 struct SimulatedAgent {
   std::string name;
   std::shared_ptr<Simulator> sim;
-  std::unique_ptr<VioManager> sys;
+  std::shared_ptr<VioManager> sys;
+  std::shared_ptr<ROS2Visualizer> viz;
   double start_time;
   double camera_offset;
   bool save_results;
@@ -59,6 +61,10 @@ struct SimulatedAgent {
       Eigen::Matrix<double, 17, 1> groundtruth;
       if (sim->get_state(camera_time + camera_offset, groundtruth))
         sys->record_groundtruth(camera_time, groundtruth.segment<16>(1));
+    }
+    if (viz) {
+      viz->visualize();
+      viz->visualize_odometry(camera_time + camera_offset);
     }
     camera_time = -1;
   }
@@ -76,6 +82,8 @@ int main(int argc, char **argv) {
     const auto names = node->get_parameter("agent_names").as_string_array();
     const auto paths = node->get_parameter("trajectory_paths").as_string_array();
     const auto config_path = node->get_parameter("config_path").as_string();
+    bool visualize = false;
+    node->get_parameter("visualize", visualize);
     if (names.empty() || names.size() != paths.size())
       throw std::invalid_argument("agent_names and datasets must have the same nonzero length");
     std::set<std::string> unique_names;
@@ -111,7 +119,7 @@ int main(int argc, char **argv) {
       auto agent = std::make_unique<SimulatedAgent>();
       agent->name = names.at(index);
       agent->sim = std::make_shared<Simulator>(params);
-      agent->sys = std::make_unique<VioManager>(params);
+      agent->sys = std::make_shared<VioManager>(params);
       agent->start_time = agent->sim->current_timestamp();
       agent->camera_offset = agent->sim->get_true_parameters().calib_camimu_dt;
       agent->save_results = params.save_results;
@@ -120,6 +128,8 @@ int main(int argc, char **argv) {
         throw std::runtime_error("Could not initialize " + agent->name);
       initial_state(0) -= agent->camera_offset;
       agent->sys->initialize_with_gt(initial_state);
+      if (visualize)
+        agent->viz = std::make_shared<ROS2Visualizer>(node->create_sub_node(agent->name), agent->sys, agent->sim);
       agents.push_back(std::move(agent));
     }
     ov_core::Printer::setThreadLabel("multi_agent");
@@ -196,6 +206,10 @@ int main(int argc, char **argv) {
 
         if (!failed.load())
           agent->process_camera();
+        if (agent->viz) {
+          agent->viz->visualize_final();
+          agent->viz.reset();
+        }
         agent->sys.reset();
         RCLCPP_INFO(node->get_logger(), "[%s] completed at elapsed %.6f s", agent->name.c_str(),
                     agent->sim->current_timestamp() - agent->start_time);

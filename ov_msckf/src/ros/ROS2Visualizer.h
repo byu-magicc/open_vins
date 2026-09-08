@@ -49,6 +49,7 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <string>
 
 #include <Eigen/Eigen>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -143,6 +144,9 @@ protected:
 
   /// Simulator (is nullptr if we are not sim'ing)
   std::shared_ptr<Simulator> _sim;
+
+  /// Prefix for vehicle-specific TF frames when using a ROS sub-namespace
+  std::string _frame_prefix;
 
   // Our publishers
   image_transport::Publisher it_pub_tracks, it_pub_loop_img_depth, it_pub_loop_img_depth_color;
