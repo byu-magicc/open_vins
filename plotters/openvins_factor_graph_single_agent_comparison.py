@@ -189,6 +189,14 @@ def main():
                 plot.plot(time, bounds[row][:, axis], color=color, linestyle="--", linewidth=0.9, label=f"{name} ±2σ")
                 plot.plot(time, -bounds[row][:, axis], color=color, linestyle="--", linewidth=0.9)
             plot.axhline(0, color="black", linewidth=0.5, alpha=0.5)
+            openvins_error = openvins_errors[row][:, axis]
+            openvins_bound = openvins_bounds[row][:, axis]
+            openvins_lower = min(np.min(openvins_error), np.min(-openvins_bound), 0.0)
+            openvins_upper = max(np.max(openvins_error), np.max(openvins_bound), 0.0)
+            buffer = 0.05 * (openvins_upper - openvins_lower)
+            if buffer == 0.0:
+                buffer = np.finfo(float).eps
+            plot.set_ylim(openvins_lower - buffer, openvins_upper + buffer)
             plot.grid(True, alpha=0.3)
             if row == 0:
                 plot.set_title(("x", "y", "z")[axis])

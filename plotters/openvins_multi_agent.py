@@ -105,16 +105,13 @@ class DataPlotter:
         # Get filenames for saving plots and data
         plots_directory = self.output_directory
         os.makedirs(plots_directory, exist_ok=True)
-        counter = 0
-        while os.path.exists(os.path.join(plots_directory, f'data_{counter}.npz')):
-            counter += 1
-        data_filename = os.path.join(plots_directory, f'data_{counter}.npz')
+        data_filename = os.path.join(plots_directory, 'data.npz')
         global_xy_position_and_error_filename = os.path.join(
-            plots_directory, f'global_xy_position_and_error_{counter}.svg')
+            plots_directory, 'global_xy_position_and_error.svg')
         global_position_filename = os.path.join(
-            plots_directory, f'global_position_{counter}.svg')
+            plots_directory, 'global_position.svg')
         global_error_filename = os.path.join(
-            plots_directory, f'global_error_{counter}.svg')
+            plots_directory, 'global_error.svg')
 
         # Save all data to a .npz file
         data = {}
