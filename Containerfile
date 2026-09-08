@@ -30,7 +30,11 @@ WORKDIR /open_vins_ws
 COPY . src/open_vins
 
 # Build workspace
-RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && colcon build"
+RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && colcon build \
+  --symlink-install \
+  --cmake-args \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+    -DCMAKE_BUILD_TYPE=Release"
 
 # Add workspace source file to entrypoint
 RUN sed -i '/exec "\$@"/i source "\/open_vins_ws\/install\/setup.bash" --' /ros_entrypoint.sh
