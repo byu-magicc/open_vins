@@ -25,6 +25,16 @@
 
 namespace ov_msckf {
 
+/** Tie an exchanged position to the translation of a local navigation pose. */
+class FactorGraphPosePositionFactor : public gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Point3> {
+public:
+  FactorGraphPosePositionFactor(gtsam::Key pose, gtsam::Key position);
+  gtsam::Vector evaluateError(const gtsam::Pose3 &pose, const gtsam::Point3 &position,
+                              boost::optional<gtsam::Matrix &> pose_jacobian = boost::none,
+                              boost::optional<gtsam::Matrix &> position_jacobian = boost::none) const override;
+  gtsam::NonlinearFactor::shared_ptr clone() const override;
+};
+
 /** Camera calibration used by factor-graph projection factors. */
 struct FactorGraphCameraCalibration {
   bool fisheye = false;

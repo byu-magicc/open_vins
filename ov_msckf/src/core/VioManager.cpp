@@ -119,7 +119,18 @@ void VioManager::finish_factor_graph_update() {
     return;
 
   factorGraphManager->finish_camera_update();
-  if (!openvins_results.is_open())
+  if (!params.defer_factor_graph_results)
+    record_estimator_results();
+}
+
+void VioManager::communicate_range(VioManager &neighbor, double timestamp, double neighbor_timestamp, double range, double variance) {
+  if (!factorGraphManager || !neighbor.factorGraphManager)
+    throw std::runtime_error("Ranging requires a factor graph on both vehicles");
+  factorGraphManager->communicate(*neighbor.factorGraphManager, timestamp, neighbor_timestamp, range, variance);
+}
+
+void VioManager::record_estimator_results() {
+  if (!factorGraphManager || !openvins_results.is_open())
     return;
   const FactorGraphResult graph = factorGraphManager->get_estimate(state->_timestamp);
 

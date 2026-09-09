@@ -78,6 +78,9 @@ public:
   /** @brief Return the latest estimate, propagated to the requested timestamp. */
   FactorGraphResult get_estimate(double timestamp);
 
+  /** Own a range measurement and exchange distributed summaries with a neighbor. */
+  void communicate(FactorGraphManager &neighbor, double timestamp, double neighbor_timestamp, double range, double variance);
+
 private:
   std::unique_ptr<FactorGraphState> state;
 };

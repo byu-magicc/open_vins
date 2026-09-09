@@ -19,17 +19,24 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
+#include <cstdint>
 #include <exception>
+#include <fstream>
+#include <iomanip>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <set>
 #include <stdexcept>
 #include <thread>
 #include <vector>
 
+#include <boost/filesystem.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 #include "core/VioManager.h"
@@ -50,6 +57,7 @@ struct SimulatedAgent {
   double camera_offset;
   bool save_results;
   double camera_time = -1;
+  double processed_time = -1;
   std::vector<int> camera_ids;
   std::vector<std::vector<std::pair<size_t, Eigen::VectorXf>>> camera_features;
 
@@ -57,6 +65,7 @@ struct SimulatedAgent {
     if (camera_time == -1)
       return;
     sys->feed_measurement_simulation(camera_time, camera_ids, camera_features);
+    processed_time = camera_time;
     if (save_results) {
       Eigen::Matrix<double, 17, 1> groundtruth;
       if (sim->get_state(camera_time + camera_offset, groundtruth))
@@ -84,6 +93,21 @@ int main(int argc, char **argv) {
     const auto config_path = node->get_parameter("config_path").as_string();
     bool visualize = false;
     node->get_parameter("visualize", visualize);
+    const double range_stddev = node->get_parameter("range_stddev").as_double();
+    const double range_variance = range_stddev * range_stddev;
+    const double range_probability = node->get_parameter("range_probability").as_double();
+    const int64_t range_seed = node->get_parameter("range_seed").as_int();
+    if (!std::isfinite(range_stddev) || range_stddev <= 0 || !std::isfinite(range_variance) || range_variance <= 0 ||
+        !std::isfinite(range_probability) || range_probability < 0 || range_probability > 1 || range_seed < 0 ||
+        range_seed > std::numeric_limits<uint32_t>::max())
+      throw std::invalid_argument("Invalid range standard deviation, probability, or seed");
+    std::mt19937 event_generator(static_cast<uint32_t>(range_seed));
+    std::seed_seq noise_seed{static_cast<uint32_t>(range_seed), 1u};
+    std::mt19937 noise_generator(noise_seed);
+    std::bernoulli_distribution range_event(range_probability);
+    std::normal_distribution<double> range_noise(0.0, range_stddev);
+    size_t range_count = 0;
+    std::ofstream range_results;
     if (names.empty() || names.size() != paths.size())
       throw std::invalid_argument("agent_names and datasets must have the same nonzero length");
     std::set<std::string> unique_names;
@@ -111,7 +135,18 @@ int main(int argc, char **argv) {
           params.sim_freq_cam <= 0)
         throw std::invalid_argument("Sensor frequencies must be finite and positive");
       params.sim_traj_path = paths.at(index);
+      if (index == 0 && params.save_results) {
+        // VioManager creates per-agent directories below this fleet result directory.
+        boost::filesystem::create_directories(params.results_path);
+        range_results.open(params.results_path + "/ranges.csv");
+        if (!range_results)
+          throw std::runtime_error("Unable to open fleet range results");
+        range_results << "owner,neighbor,elapsed,owner_timestamp,neighbor_timestamp,true_range,measured_range,variance\n";
+        range_results << std::setprecision(17);
+      }
       params.set_results_namespace(names.at(index));
+      params.factor_graph_agent_id = index;
+      params.defer_factor_graph_results = true;
       params.num_opencv_threads = 0;
       params.use_multi_threading_pubs = false;
       params.use_multi_threading_subs = false;
@@ -148,6 +183,7 @@ int main(int argc, char **argv) {
       workers.emplace_back([&, agent = agent_ptr.get()]() {
         ov_core::Printer::setThreadLabel(agent->name);
         while (true) {
+          agent->processed_time = -1;
           if (agent->sim->ok() && rclcpp::ok() && !failed.load()) {
             try {
               bool reached_camera = false;
@@ -168,6 +204,8 @@ int main(int argc, char **argv) {
                   reached_camera = true;
                 }
               }
+              if (!agent->sim->ok())
+                agent->process_camera();
             } catch (...) {
               PRINT_ERROR("Simulation worker failed\n");
               std::lock_guard<std::mutex> lock(barrier_mutex);
@@ -183,6 +221,45 @@ int main(int argc, char **argv) {
           const size_t generation = barrier_generation;
           barrier_arrivals++;
           if (barrier_arrivals == agents.size()) {
+            if (!failed.load() && rclcpp::ok()) {
+              try {
+                for (size_t i = 0; i < agents.size(); ++i) {
+                  auto &owner = *agents[i];
+                  if (owner.processed_time < 0)
+                    continue;
+                  for (size_t j = i + 1; j < agents.size(); ++j) {
+                    auto &neighbor = *agents[j];
+                    if (neighbor.processed_time < 0 || !range_event(event_generator))
+                      continue;
+                    Eigen::Matrix<double, 17, 1> owner_truth, neighbor_truth;
+                    if (!owner.sim->get_state(owner.processed_time + owner.camera_offset, owner_truth) ||
+                        !neighbor.sim->get_state(neighbor.processed_time + neighbor.camera_offset, neighbor_truth))
+                      throw std::runtime_error("Range epoch has no simulation truth");
+                    const double truth = (owner_truth.segment<3>(5) - neighbor_truth.segment<3>(5)).norm();
+                    const double measurement = std::max(0.0, truth + range_noise(noise_generator));
+                    owner.sys->communicate_range(*neighbor.sys, owner.processed_time, neighbor.processed_time, measurement, range_variance);
+                    ++range_count;
+                    const double elapsed = owner.processed_time + owner.camera_offset - owner.start_time;
+                    RCLCPP_INFO(node->get_logger(), "Range %zu %s <- %s at %.3f s (%.6f, %.6f): truth %.3f m, measured %.3f m", range_count,
+                                owner.name.c_str(), neighbor.name.c_str(), elapsed, owner.processed_time, neighbor.processed_time, truth,
+                                measurement);
+                    if (range_results.is_open()) {
+                      range_results << owner.name << ',' << neighbor.name << ',' << elapsed << ',' << owner.processed_time << ','
+                                    << neighbor.processed_time << ',' << truth << ',' << measurement << ',' << range_variance << '\n';
+                      range_results.flush();
+                    }
+                  }
+                }
+                for (const auto &candidate : agents) {
+                  if (candidate->processed_time >= 0)
+                    candidate->sys->record_estimator_results();
+                }
+              } catch (...) {
+                worker_error = std::current_exception();
+                active_agent = "camera barrier";
+                failed.store(true);
+              }
+            }
             stop = failed.load() || !rclcpp::ok();
             if (!stop) {
               stop = true;
@@ -204,8 +281,6 @@ int main(int argc, char **argv) {
             break;
         }
 
-        if (!failed.load())
-          agent->process_camera();
         if (agent->viz) {
           agent->viz->visualize_final();
           agent->viz.reset();
@@ -219,6 +294,7 @@ int main(int argc, char **argv) {
       worker.join();
     if (worker_error)
       std::rethrow_exception(worker_error);
+    RCLCPP_INFO(node->get_logger(), "Completed %zu range measurements", range_count);
     agents.clear();
   } catch (const std::exception &error) {
     RCLCPP_ERROR(node->get_logger(), "[%s] %s", active_agent.c_str(), error.what());

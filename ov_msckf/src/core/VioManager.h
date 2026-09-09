@@ -117,6 +117,9 @@ public:
   /// Record simulation ground truth for an aligned factor-graph result row
   void record_groundtruth(double timestamp, const Eigen::Matrix<double, 16, 1> &groundtruth);
 
+  void record_estimator_results();
+  void communicate_range(VioManager &neighbor, double timestamp, double neighbor_timestamp, double range, double variance);
+
   /// Accessor to get the current state
   std::shared_ptr<State> get_state() { return state; }
 

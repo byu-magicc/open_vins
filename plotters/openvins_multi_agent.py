@@ -7,18 +7,19 @@ Usage:
 The results directory may either be one agent directory, or a directory whose
 immediate children are agent directories. Each agent directory must contain
 ``openvins.csv`` and ``groundtruth.csv`` as written with ``save_results:=true``.
+If present, the fleet-level ``ranges.csv`` supplies range-event annotations.
 The script writes the same three SVG plots and NPZ data archive as the former
 ROS plotter into the output directory.
 """
 
 import argparse
+import csv
 import os
 from pathlib import Path
 
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 
@@ -32,6 +33,9 @@ def load_csv(path, required_columns):
         raise ValueError(f"{path} is missing columns: {', '.join(missing)}")
     if data.size == 0:
         raise ValueError(f"{path} contains no result rows")
+    timestamps = np.asarray(data['timestamp'], dtype=float)
+    if not np.all(np.isfinite(timestamps)) or np.unique(timestamps).size != timestamps.size:
+        raise ValueError(f"{path} has invalid or duplicate timestamps")
     return data
 
 
@@ -63,11 +67,20 @@ class DataPlotter:
         for directory in agent_directories:
             truth = load_csv(directory / 'groundtruth.csv', state_columns)
             estimate = load_csv(directory / 'openvins.csv', estimator_columns)
-            if truth.size != estimate.size or not np.array_equal(truth['timestamp'], estimate['timestamp']):
-                raise ValueError(f"Timestamps do not match in {directory}")
+            timestamps = np.intersect1d(truth['timestamp'], estimate['timestamp'])
+            if timestamps.size < 2:
+                raise ValueError(f"Fewer than two timestamps match in {directory}")
+
+            dropped = truth.size + estimate.size - 2 * timestamps.size
+            truth_indices = {timestamp: index for index, timestamp in enumerate(truth['timestamp'])}
+            estimate_indices = {timestamp: index for index, timestamp in enumerate(estimate['timestamp'])}
+            truth = truth[[truth_indices[timestamp] for timestamp in timestamps]]
+            estimate = estimate[[estimate_indices[timestamp] for timestamp in timestamps]]
+            if dropped:
+                print(f"Dropped {dropped} unmatched rows in {directory}")
 
             key = directory.name
-            self.time_data[key] = np.asarray(truth['timestamp'])
+            self.time_data[key] = timestamps
             self.global_truth_data[key] = np.column_stack([
                 truth['p_x'], truth['p_y'], truth['p_z'],
                 truth['q_x'], truth['q_y'], truth['q_z'], truth['q_w'],
@@ -82,6 +95,28 @@ class DataPlotter:
             self.global_orientation_std[key] = np.sqrt(np.column_stack([
                 estimate['cov_0_0'], estimate['cov_1_1'], estimate['cov_2_2'],
             ]))
+
+        self.range_measurements = []
+        ranges_path = results_directory / 'ranges.csv'
+        if not ranges_path.is_file() and len(agent_directories) == 1:
+            ranges_path = results_directory.parent / 'ranges.csv'
+        if ranges_path.is_file():
+            with ranges_path.open(newline='') as ranges_file:
+                ranges = csv.DictReader(ranges_file)
+                required_columns = {'owner', 'neighbor', 'owner_timestamp', 'neighbor_timestamp'}
+                missing = sorted(required_columns - set(ranges.fieldnames or ()))
+                if missing:
+                    raise ValueError(f"{ranges_path} is missing columns: {', '.join(missing)}")
+                for measurement in ranges:
+                    owner = measurement['owner']
+                    neighbor = measurement['neighbor']
+                    if owner not in self.time_data and neighbor not in self.time_data:
+                        continue
+                    owner_timestamp = float(measurement['owner_timestamp'])
+                    neighbor_timestamp = float(measurement['neighbor_timestamp'])
+                    if not np.isfinite(owner_timestamp) or not np.isfinite(neighbor_timestamp):
+                        raise ValueError(f'{ranges_path} contains a non-finite timestamp')
+                    self.range_measurements.append((owner, neighbor, owner_timestamp, neighbor_timestamp))
 
 
     def plot_data(self):
@@ -101,6 +136,39 @@ class DataPlotter:
             global_position_std[key] = self.global_position_std[key]
             global_estimate_orientation[key] = self.global_estimate_data[key][:, 3:]
             global_orientation_std[key] = self.global_orientation_std[key]
+
+        range_times = {key: [] for key in time}
+        fleet_range_times = []
+        range_segments = []
+        for owner, neighbor, owner_timestamp, neighbor_timestamp in self.range_measurements:
+            if owner in time:
+                owner_time = owner_timestamp - self.time_data[owner][0]
+                if time[owner][0] <= owner_time <= time[owner][-1]:
+                    range_times[owner].append(owner_time)
+                    fleet_range_times.append(owner_time)
+            if neighbor in time:
+                neighbor_time = neighbor_timestamp - self.time_data[neighbor][0]
+                if time[neighbor][0] <= neighbor_time <= time[neighbor][-1]:
+                    range_times[neighbor].append(neighbor_time)
+                    if owner not in time:
+                        fleet_range_times.append(neighbor_time)
+            if owner in time and neighbor in time:
+                owner_timestamps = self.time_data[owner]
+                neighbor_timestamps = self.time_data[neighbor]
+                if (owner_timestamps[0] <= owner_timestamp <= owner_timestamps[-1]
+                        and neighbor_timestamps[0] <= neighbor_timestamp <= neighbor_timestamps[-1]):
+                    owner_position = np.array([
+                        np.interp(owner_timestamp, owner_timestamps, global_estimate_position[owner][:, axis])
+                        for axis in range(2)
+                    ])
+                    neighbor_position = np.array([
+                        np.interp(neighbor_timestamp, neighbor_timestamps, global_estimate_position[neighbor][:, axis])
+                        for axis in range(2)
+                    ])
+                    range_segments.append((owner_position, neighbor_position))
+        for key in range_times:
+            range_times[key].sort()
+        fleet_range_times.sort()
 
         # Get filenames for saving plots and data
         plots_directory = self.output_directory
@@ -155,8 +223,13 @@ class DataPlotter:
                 axs[0].plot(global_truth_position[key][:, 0], global_truth_position[key][:, 1], color='blue')
                 axs[0].plot(global_estimate_position[key][:, 0], global_estimate_position[key][:, 1], color='red')
 
-        blue_patch = mpatches.Patch(color='blue', label='Truth')
-        red_patch = mpatches.Patch(color='red', label='Global Estimate')
+        for segment_index, (owner_position, neighbor_position) in enumerate(range_segments):
+            label = 'Range measurement' if segment_index == 0 else None
+            axs[0].plot(
+                [owner_position[0], neighbor_position[0]],
+                [owner_position[1], neighbor_position[1]],
+                color='grey', linestyle='--', linewidth=0.8, alpha=0.7, label=label,
+            )
         axs[0].set_xlabel('X Position (m)')
         axs[0].set_ylabel('Y Position (m)')
         axs[0].set_title('XY Position of Agents (Global Estimate)')
@@ -166,6 +239,9 @@ class DataPlotter:
         # Global norm position error data
         for key in self.global_truth_data.keys():
             axs[1].plot(time[key], np.linalg.norm(global_position_error[key], axis=1), label=key)
+        for event_index, range_time in enumerate(fleet_range_times):
+            label = 'Range measurement' if event_index == 0 else None
+            axs[1].axvline(range_time, color='grey', linestyle='--', linewidth=0.8, alpha=0.7, label=label)
         axs[1].set_xlabel('Time (s)')
         axs[1].set_ylabel('Normed Position Error (m)')
         axs[1].set_title('Position Error of Agents (Global Estimate)')
@@ -218,6 +294,13 @@ class DataPlotter:
             axs[5, column_idx].plot(time[key], global_estimate_orientation[key][:, 2], color='red')
             axs[5, column_idx].set_xlabel('Time (s)')
             axs[5, column_idx].grid()
+
+            for row in range(6):
+                for event_index, range_time in enumerate(range_times[key]):
+                    label = 'Range measurement' if row == 0 and event_index == 0 else None
+                    axs[row, column_idx].axvline(
+                        range_time, color='grey', linestyle='--', linewidth=0.8, alpha=0.7, label=label,
+                    )
 
             # Add ylabels and legend
             if column_idx == 0:
@@ -282,6 +365,13 @@ class DataPlotter:
             axs[5, column_idx].plot(time[key], -global_orientation_std[key][:, 2]*2, color='blue')
             axs[5, column_idx].set_xlabel('Time (s)')
             axs[5, column_idx].grid()
+
+            for row in range(6):
+                for event_index, range_time in enumerate(range_times[key]):
+                    label = 'Range measurement' if row == 0 and event_index == 0 else None
+                    axs[row, column_idx].axvline(
+                        range_time, color='grey', linestyle='--', linewidth=0.8, alpha=0.7, label=label,
+                    )
 
             # Add ylabels to leftmost plots
             if column_idx == 0:

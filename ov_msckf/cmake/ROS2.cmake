@@ -114,6 +114,11 @@ ament_target_dependencies(test_sim_meas ${ament_libraries})
 target_link_libraries(test_sim_meas ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS test_sim_meas DESTINATION lib/${PROJECT_NAME})
 
+add_executable(test_factor_graph_distributed src/test_factor_graph_distributed.cpp)
+ament_target_dependencies(test_factor_graph_distributed ${ament_libraries})
+target_link_libraries(test_factor_graph_distributed ov_msckf_lib ${thirdparty_libraries})
+install(TARGETS test_factor_graph_distributed DESTINATION lib/${PROJECT_NAME})
+
 add_executable(test_sim_repeat src/test_sim_repeat.cpp)
 ament_target_dependencies(test_sim_repeat ${ament_libraries})
 target_link_libraries(test_sim_repeat ov_msckf_lib ${thirdparty_libraries})

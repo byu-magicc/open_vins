@@ -97,6 +97,12 @@ struct VioManagerOptions {
   /// If the passive factor-graph estimator interface should receive accepted measurements
   bool use_factor_graph = false;
 
+  /// Fleet identity used only for exchanged factor-graph positions.
+  size_t factor_graph_agent_id = 0;
+
+  /// The multi-agent barrier records results after range exchanges.
+  bool defer_factor_graph_results = false;
+
   /// Number of iSAM2 updates between relinearization checks
   int relinearize_skip = 10;
 

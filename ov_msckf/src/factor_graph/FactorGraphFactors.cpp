@@ -21,6 +21,21 @@
 
 using namespace ov_msckf;
 
+FactorGraphPosePositionFactor::FactorGraphPosePositionFactor(gtsam::Key pose, gtsam::Key position)
+    : gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Point3>(gtsam::noiseModel::Isotropic::Sigma(3, 1e-2), pose, position) {}
+
+gtsam::Vector FactorGraphPosePositionFactor::evaluateError(const gtsam::Pose3 &pose, const gtsam::Point3 &position,
+                                                           boost::optional<gtsam::Matrix &> pose_jacobian,
+                                                           boost::optional<gtsam::Matrix &> position_jacobian) const {
+  if (position_jacobian)
+    *position_jacobian = -gtsam::Matrix3::Identity();
+  return pose.translation(pose_jacobian) - position;
+}
+
+gtsam::NonlinearFactor::shared_ptr FactorGraphPosePositionFactor::clone() const {
+  return boost::make_shared<FactorGraphPosePositionFactor>(*this);
+}
+
 namespace {
 
 gtsam::KeyVector projection_keys(gtsam::Key pose_key, gtsam::Key landmark_key, const FactorGraphCameraCalibration &calibration) {

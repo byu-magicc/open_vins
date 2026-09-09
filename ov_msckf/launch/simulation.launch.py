@@ -3,6 +3,7 @@ from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction, Shutd
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 import os
 
@@ -19,6 +20,9 @@ launch_args = [
     DeclareLaunchArgument(name="simulation_executable", default_value="run_simulation"),
     DeclareLaunchArgument(name="agent_names", default_value="center,left,right"),
     DeclareLaunchArgument(name="datasets", default_value=""),
+    DeclareLaunchArgument(name="range_stddev", default_value="1.0", description="Range noise standard deviation in meters"),
+    DeclareLaunchArgument(name="range_probability", default_value="0.006", description="Range probability per pair per camera epoch"),
+    DeclareLaunchArgument(name="range_seed", default_value="5", description="Random seed for ranging"),
 
     DeclareLaunchArgument(
         name="verbosity",
@@ -266,6 +270,9 @@ def launch_setup(context):
                 )
             },
             {"sim_seed_state_init": 0},
+            {"range_stddev": ParameterValue(LaunchConfiguration("range_stddev"), value_type=float)},
+            {"range_probability": ParameterValue(LaunchConfiguration("range_probability"), value_type=float)},
+            {"range_seed": ParameterValue(LaunchConfiguration("range_seed"), value_type=int)},
             {"sim_seed_measurements": LaunchConfiguration("seed")},
             {"sim_seed_preturb": LaunchConfiguration("seed")},
             {"sim_freq_cam": LaunchConfiguration("freq_cam")},

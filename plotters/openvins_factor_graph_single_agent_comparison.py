@@ -15,6 +15,7 @@ optimizer diagnostics. The three files must come from the same recorded run.
 """
 
 import argparse
+import csv
 from pathlib import Path
 
 import matplotlib
@@ -132,6 +133,23 @@ def main():
         openvins_data, factor_graph_data, groundtruth_data
     )
 
+    time = timestamps - timestamps[0]
+    range_times = []
+    ranges_path = args.results_directory.parent / "ranges.csv"
+    if ranges_path.is_file():
+        with ranges_path.open(newline="") as ranges_file:
+            ranges = csv.DictReader(ranges_file)
+            required_columns = {"owner", "neighbor", "owner_timestamp", "neighbor_timestamp"}
+            missing = sorted(required_columns - set(ranges.fieldnames or ()))
+            if missing:
+                raise ValueError(f"{ranges_path} is missing columns: {', '.join(missing)}")
+            for measurement in ranges:
+                if measurement["owner"] == args.results_directory.name:
+                    range_times.append(float(measurement["owner_timestamp"]) - timestamps[0])
+                elif measurement["neighbor"] == args.results_directory.name:
+                    range_times.append(float(measurement["neighbor_timestamp"]) - timestamps[0])
+    range_times = sorted(range_time for range_time in range_times if time[0] <= range_time <= time[-1])
+
     openvins_state = state_values(openvins_data)
     factor_graph_state = state_values(factor_graph_data)
     truth_state = state_values(groundtruth_data)
@@ -175,7 +193,6 @@ def main():
         "Accel bias error (m/s²)",
     )
     colors = {"OpenVINS": "tab:blue", "Factor graph": "tab:orange"}
-    time = timestamps - timestamps[0]
     figure, axes = plt.subplots(5, 3, figsize=(15, 16), sharex=True)
     for row in range(5):
         for axis in range(3):
@@ -188,6 +205,9 @@ def main():
                 plot.plot(time, errors[row][:, axis], color=color, linewidth=1.1, label=f"{name} error")
                 plot.plot(time, bounds[row][:, axis], color=color, linestyle="--", linewidth=0.9, label=f"{name} ±2σ")
                 plot.plot(time, -bounds[row][:, axis], color=color, linestyle="--", linewidth=0.9)
+            for event_index, range_time in enumerate(range_times):
+                label = "Range measurement" if row == 0 and axis == 0 and event_index == 0 else None
+                plot.axvline(range_time, color="grey", linestyle="--", linewidth=0.8, alpha=0.7, label=label)
             plot.axhline(0, color="black", linewidth=0.5, alpha=0.5)
             openvins_error = openvins_errors[row][:, axis]
             openvins_bound = openvins_bounds[row][:, axis]

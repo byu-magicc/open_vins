@@ -84,3 +84,8 @@ void FactorGraphManager::apply_pending_global_factors(double timestamp) { state-
 void FactorGraphManager::finish_camera_update() { state->finish_update(); }
 
 FactorGraphResult FactorGraphManager::get_estimate(double timestamp) { return state->get_estimate(timestamp); }
+
+void FactorGraphManager::communicate(FactorGraphManager &neighbor, double timestamp, double neighbor_timestamp, double range,
+                                     double variance) {
+  state->communicate(*neighbor.state, timestamp, neighbor_timestamp, range, variance);
+}

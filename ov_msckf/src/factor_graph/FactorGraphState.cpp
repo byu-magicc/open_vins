@@ -16,9 +16,13 @@
 #include "utils/sensor_data.h"
 
 #include <gtsam/inference/Symbol.h>
+#include <gtsam/linear/GaussianFactorGraph.h>
+#include <gtsam/linear/HessianFactor.h>
 #include <gtsam/linear/JacobianFactor.h>
 #include <gtsam/navigation/GPSFactor.h>
+#include <gtsam/nonlinear/ISAM2UpdateParams.h>
 #include <gtsam/nonlinear/LinearContainerFactor.h>
+#include <gtsam/sam/RangeFactor.h>
 
 #include <algorithm>
 #include <chrono>
@@ -100,8 +104,7 @@ Eigen::MatrixXd pair_marginal_covariance(const gtsam::ISAM2 &optimizer, gtsam::K
   return decomposition.solve(Eigen::MatrixXd::Identity(dimension, dimension));
 }
 
-Eigen::MatrixXd joint_marginal_covariance(const gtsam::ISAM2 &optimizer, const gtsam::KeyVector &keys,
-                                          const std::vector<int> &dimensions) {
+Eigen::MatrixXd joint_marginal_covariance(const gtsam::ISAM2 &optimizer, const gtsam::KeyVector &keys, const std::vector<int> &dimensions) {
   const int total_dimension = std::accumulate(dimensions.begin(), dimensions.end(), 0);
   Eigen::MatrixXd covariance = Eigen::MatrixXd::Zero(total_dimension, total_dimension);
   int row = 0;
@@ -109,8 +112,8 @@ Eigen::MatrixXd joint_marginal_covariance(const gtsam::ISAM2 &optimizer, const g
     covariance.block(row, row, dimensions.at(first), dimensions.at(first)) = optimizer.marginalCovariance(keys.at(first));
     int column = row + dimensions.at(first);
     for (size_t second = first + 1; second < keys.size(); second++) {
-      const Eigen::MatrixXd pair = pair_marginal_covariance(optimizer, keys.at(first), keys.at(second), dimensions.at(first),
-                                                            dimensions.at(second));
+      const Eigen::MatrixXd pair =
+          pair_marginal_covariance(optimizer, keys.at(first), keys.at(second), dimensions.at(first), dimensions.at(second));
       covariance.block(row, column, dimensions.at(first), dimensions.at(second)) =
           pair.block(0, dimensions.at(first), dimensions.at(first), dimensions.at(second));
       covariance.block(column, row, dimensions.at(second), dimensions.at(first)) =
@@ -124,7 +127,9 @@ Eigen::MatrixXd joint_marginal_covariance(const gtsam::ISAM2 &optimizer, const g
 
 } // namespace
 
-FactorGraphState::FactorGraphState(const VioManagerOptions &options) {
+FactorGraphState::FactorGraphState(const VioManagerOptions &options) : agent_id(options.factor_graph_agent_id) {
+  if (agent_id >= (uint64_t{1} << 24))
+    throw std::invalid_argument("Factor graph fleet ID exceeds the shared-key namespace");
   gtsam::ISAM2Params optimizer_parameters;
   optimizer_parameters.relinearizeThreshold = options.relinearize_threshold;
   optimizer_parameters.relinearizeSkip = options.relinearize_skip;
@@ -170,7 +175,6 @@ FactorGraphState::FactorGraphState(const VioManagerOptions &options) {
     calibration.intrinsics = options.camera_intrinsics.at(camera_id)->get_value();
     camera_calibrations.insert({camera_id, calibration});
   }
-
 }
 
 void FactorGraphState::feed_imu(const ov_core::ImuData &message) {
@@ -191,6 +195,11 @@ void FactorGraphState::initialize(const FactorGraphInitialization &initializatio
   pending_values.clear();
   frames.clear();
   landmark_keys.clear();
+  shared_keys.clear();
+  local_shared_keys.clear();
+  cached_summaries.clear();
+  pending_remove_factor_indices.clear();
+  summary_version = 0;
   next_frame_index = 0;
   next_landmark_index = 0;
   failed = false;
@@ -273,7 +282,7 @@ void FactorGraphState::initialize(const FactorGraphInitialization &initializatio
   const gtsam::JacobianFactor joint_prior(terms, gtsam::Vector::Zero(covariance_size), gtsam::noiseModel::Unit::Create(covariance_size));
   pending_factors.emplace_shared<gtsam::LinearContainerFactor>(joint_prior, initial_values);
   pending_values.insert(initial_values);
-  commit();
+  commit(false);
   initialized = true;
 }
 
@@ -438,8 +447,8 @@ void FactorGraphState::add_visual_factors(const FactorGraphVisualUpdate &update)
       Eigen::MatrixXd point_jacobian = Eigen::MatrixXd::Zero(2 * observations.size(), 3);
       bool finite_jacobian = true;
       for (size_t index = 0; index < observations.size(); index++) {
-        FactorGraphProjectionFactor factor(candidate_key, observations.at(index),
-                                           camera_calibrations.at(observations.at(index).camera_id), sigma_slam_pixels);
+        FactorGraphProjectionFactor factor(candidate_key, observations.at(index), camera_calibrations.at(observations.at(index).camera_id),
+                                           sigma_slam_pixels);
         std::vector<gtsam::Matrix> jacobians;
         const gtsam::Vector residual = factor.unwhitenedError(candidate_values, jacobians);
         if (!residual.allFinite() || jacobians.size() < 2 || !jacobians.at(1).allFinite()) {
@@ -467,22 +476,31 @@ void FactorGraphState::add_visual_factors(const FactorGraphVisualUpdate &update)
   }
 }
 
-void FactorGraphState::commit() {
-  if (pending_factors.empty() && pending_values.empty())
+void FactorGraphState::commit(bool force_relinearize) {
+  if (failed)
+    throw std::runtime_error("Factor graph is unavailable after an earlier solver failure");
+  if (!force_relinearize && pending_factors.empty() && pending_values.empty() && pending_remove_factor_indices.empty())
     return;
   const auto start = std::chrono::steady_clock::now();
   try {
-    optimizer->update(pending_factors, pending_values);
+    gtsam::ISAM2UpdateParams update_params;
+    update_params.removeFactorIndices = pending_remove_factor_indices;
+    update_params.force_relinearize = force_relinearize;
+    optimizer->update(pending_factors, pending_values, update_params);
   } catch (const std::exception &exception) {
     PRINT_ERROR("[FACTOR-GRAPH]: disabling parallel estimator after iSAM2 failure: %s\n", exception.what());
     failed = true;
     pending_factors.resize(0);
     pending_values.clear();
+    pending_remove_factor_indices.clear();
+    if (force_relinearize)
+      throw;
     return;
   }
   last_update_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
   pending_factors.resize(0);
   pending_values.clear();
+  pending_remove_factor_indices.clear();
 }
 
 void FactorGraphState::marginalize_landmarks(const std::vector<size_t> &feature_ids) {
@@ -508,7 +526,7 @@ void FactorGraphState::apply_pending_global_factors(double timestamp) {
                                                      gtsam::noiseModel::Gaussian::Covariance(gps.cov_z_global));
   }
   gps_buffer.clear();
-  commit();
+  commit(false);
 }
 
 FactorGraphResult FactorGraphState::get_estimate(double timestamp) {
@@ -567,8 +585,7 @@ FactorGraphResult FactorGraphState::get_estimate(double timestamp) {
       input_column += jacobians.at(key_index).cols();
     }
     propagation_mapping = end_solver.solve(-input_jacobian);
-    const Eigen::Matrix<double, 15, 15> noise_mapping =
-        end_solver.solve(Eigen::Matrix<double, 15, 15>::Identity());
+    const Eigen::Matrix<double, 15, 15> noise_mapping = end_solver.solve(Eigen::Matrix<double, 15, 15>::Identity());
     const auto gaussian_noise = boost::dynamic_pointer_cast<gtsam::noiseModel::Gaussian>(propagation.noiseModel());
     if (gaussian_noise == nullptr)
       throw std::runtime_error("propagated IMU factor does not have Gaussian noise");
@@ -598,8 +615,7 @@ FactorGraphResult FactorGraphState::get_estimate(double timestamp) {
   };
 
   try {
-    const Eigen::MatrixXd input_covariance =
-        joint_marginal_covariance(*optimizer, propagation_input_keys, propagation_input_dimensions);
+    const Eigen::MatrixXd input_covariance = joint_marginal_covariance(*optimizer, propagation_input_keys, propagation_input_dimensions);
     Eigen::Matrix<double, 15, 15> graph_covariance =
         propagation_mapping * input_covariance * propagation_mapping.transpose() + propagation_covariance;
     graph_covariance = 0.5 * (graph_covariance + graph_covariance.transpose());
@@ -622,7 +638,157 @@ FactorGraphResult FactorGraphState::get_estimate(double timestamp) {
 
 void FactorGraphState::finish_update() {
   std::lock_guard<std::mutex> lock(mutex);
-  if (!initialized)
+  if (!initialized || failed)
     return;
-  commit();
+  commit(false);
+}
+
+void FactorGraphState::communicate(FactorGraphState &neighbor, double timestamp, double neighbor_timestamp, double range, double variance) {
+  if (&neighbor == this || neighbor.agent_id == agent_id)
+    throw std::invalid_argument("Ranging requires distinct fleet identities");
+  if (!std::isfinite(timestamp) || !std::isfinite(neighbor_timestamp) || !std::isfinite(range) || range < 0 || !std::isfinite(variance) ||
+      variance <= 0)
+    throw std::invalid_argument("Invalid range measurement or timestamp");
+  std::unique_lock<std::mutex> local_lock(mutex, std::defer_lock);
+  std::unique_lock<std::mutex> neighbor_lock(neighbor.mutex, std::defer_lock);
+  std::lock(local_lock, neighbor_lock);
+  if (!initialized || !neighbor.initialized || failed || neighbor.failed)
+    throw std::runtime_error("Ranging requires two initialized, healthy factor graphs");
+
+  // This graph owns the range; the neighbor supplies its position and information first.
+  const gtsam::Key position = neighbor.declare_shared(neighbor_timestamp);
+  update_summary(neighbor.get_summary(neighbor_timestamp), neighbor.agent_id);
+  for (const auto &entry : neighbor.cached_summaries)
+    update_summary(entry.second.summary, entry.first);
+  local_shared_keys.insert(position);
+  const Frame &frame = ensure_frame(timestamp);
+  // GTSAM's native range Jacobian assumes distinct pose and point linearization positions.
+  pending_factors.emplace_shared<gtsam::RangeFactor<gtsam::Pose3, gtsam::Point3>>(frame.pose_key, position, range,
+                                                                                  gtsam::noiseModel::Isotropic::Variance(1, variance));
+
+  // get_summary commits the range with forced relinearization before summarizing it.
+  neighbor.update_summary(get_summary(timestamp), agent_id);
+  for (const auto &entry : cached_summaries)
+    neighbor.update_summary(entry.second.summary, entry.first);
+  neighbor.commit(true);
+}
+
+gtsam::Key FactorGraphState::declare_shared(double timestamp) {
+  const Frame &frame = ensure_frame(timestamp);
+  const uint64_t frame_index = gtsam::Symbol(frame.pose_key).index();
+  if (frame_index > std::numeric_limits<uint32_t>::max())
+    throw std::overflow_error("Shared position frame index overflow");
+  const gtsam::Key key = gtsam::Symbol('s', (uint64_t{agent_id} << 32) | frame_index);
+  if (!optimizer->valueExists(key) && !pending_values.exists(key)) {
+    const auto pose = pending_values.exists(frame.pose_key) ? pending_values.at<gtsam::Pose3>(frame.pose_key)
+                                                            : optimizer->calculateEstimate<gtsam::Pose3>(frame.pose_key);
+    pending_values.insert(key, gtsam::Point3(pose.translation()));
+    pending_factors.emplace_shared<FactorGraphPosePositionFactor>(frame.pose_key, key);
+  }
+  shared_keys.insert(key);
+  local_shared_keys.insert(key);
+  return key;
+}
+
+void FactorGraphState::update_summary(const Summary &summary, size_t origin) {
+  if (origin == agent_id)
+    return;
+  const auto cached = cached_summaries.find(origin);
+  if (cached != cached_summaries.end() && summary.version <= cached->second.summary.version)
+    return;
+
+  for (gtsam::Key key : summary.factor->keys()) {
+    shared_keys.insert(key);
+    if (!optimizer->valueExists(key) && !pending_values.exists(key))
+      pending_values.insert(key, summary.values.at<gtsam::Point3>(key));
+  }
+  if (cached != cached_summaries.end()) {
+    const auto &old_factor = cached->second.graph_factor;
+    const auto pending = std::find(pending_factors.begin(), pending_factors.end(), old_factor);
+    if (pending != pending_factors.end()) {
+      pending_factors.erase(pending);
+    } else {
+      const auto &committed = optimizer->getFactorsUnsafe();
+      const auto old = std::find(committed.begin(), committed.end(), old_factor);
+      if (old == committed.end())
+        throw std::logic_error("Cached distributed summary is missing from the graph");
+      pending_remove_factor_indices.push_back(std::distance(committed.begin(), old));
+    }
+  }
+  auto factor = boost::make_shared<gtsam::LinearContainerFactor>(summary.factor, summary.values);
+  pending_factors.push_back(factor);
+  cached_summaries.erase(origin);
+  cached_summaries.emplace(origin, CachedSummary{summary, factor});
+}
+
+FactorGraphState::Summary FactorGraphState::get_summary(double timestamp) {
+  commit(true);
+  if (shared_keys.empty() || local_shared_keys.empty())
+    throw std::logic_error("Cannot summarize a graph without locally relevant shared positions");
+
+  // Marginalize the entire Bayes-tree Gaussian system at its linearization point.
+  gtsam::GaussianFactorGraph gaussian;
+  optimizer->addFactorsToGraph(&gaussian);
+  const gtsam::KeyVector marginal_keys(shared_keys.begin(), shared_keys.end());
+  const auto marginal = gaussian.marginal(marginal_keys);
+  const auto dense = boost::make_shared<gtsam::HessianFactor>(*marginal);
+  const auto &values = optimizer->getLinearizationPoint();
+
+  // Remove information already received, in the same linearization coordinates.
+  gtsam::GaussianFactorGraph corrected;
+  corrected.push_back(dense);
+  for (const auto &entry : cached_summaries)
+    corrected.push_back(entry.second.graph_factor->linearize(values)->negate());
+  const gtsam::HessianFactor corrected_dense(corrected);
+
+  gtsam::KeyVector selected_keys;
+  std::vector<gtsam::DenseIndex> selected_indices;
+  const auto &keys = corrected_dense.keys();
+  for (size_t index = 0; index < keys.size(); ++index) {
+    if (local_shared_keys.count(keys[index])) {
+      selected_keys.push_back(keys[index]);
+      selected_indices.push_back(static_cast<gtsam::DenseIndex>(index));
+    }
+  }
+  std::vector<gtsam::Matrix> blocks;
+  std::vector<gtsam::Vector> linear_blocks;
+  for (size_t i = 0; i < selected_indices.size(); ++i) {
+    for (size_t j = i; j < selected_indices.size(); ++j)
+      blocks.push_back(corrected_dense.info().block(selected_indices[i], selected_indices[j]));
+    linear_blocks.push_back(corrected_dense.linearTerm(corrected_dense.begin() + selected_indices[i]));
+  }
+  const gtsam::HessianFactor reduced(selected_keys, blocks, linear_blocks, corrected_dense.constantTerm());
+  const gtsam::Matrix information = reduced.information();
+  Eigen::SelfAdjointEigenSolver<gtsam::Matrix> eigen_solver(0.5 * (information + information.transpose()));
+  if (eigen_solver.info() != Eigen::Success)
+    throw std::runtime_error("Failed to factor distributed summary information");
+  const auto &eigenvalues = eigen_solver.eigenvalues();
+  const double tolerance = 10.0 * information.rows() * std::numeric_limits<double>::epsilon() * dense->information().norm();
+  const Eigen::Index rank = (eigenvalues.array() > tolerance).count();
+  gtsam::Matrix jacobian(rank, information.cols());
+  gtsam::Vector rhs(rank);
+  gtsam::Vector linear_term(information.rows());
+  Eigen::Index offset = 0;
+  for (const auto &block : linear_blocks) {
+    linear_term.segment(offset, block.size()) = block;
+    offset += block.size();
+  }
+  Eigen::Index row = 0;
+  for (Eigen::Index i = 0; i < eigenvalues.size(); ++i) {
+    if (eigenvalues(i) <= tolerance)
+      continue;
+    const double root = std::sqrt(eigenvalues(i));
+    jacobian.row(row) = root * eigen_solver.eigenvectors().col(i).transpose();
+    rhs(row++) = eigen_solver.eigenvectors().col(i).dot(linear_term) / root;
+  }
+  std::vector<std::pair<gtsam::Key, gtsam::Matrix>> terms;
+  gtsam::Values summary_values;
+  offset = 0;
+  for (size_t i = 0; i < selected_keys.size(); ++i) {
+    const Eigen::Index dimension = linear_blocks[i].size();
+    terms.emplace_back(selected_keys[i], jacobian.middleCols(offset, dimension));
+    summary_values.insert(selected_keys[i], values.at<gtsam::Point3>(selected_keys[i]));
+    offset += dimension;
+  }
+  return {++summary_version, timestamp, boost::make_shared<gtsam::JacobianFactor>(terms, rhs), summary_values};
 }

@@ -14,10 +14,12 @@
 #include "FactorGraphFactors.h"
 #include "FactorGraphTypes.h"
 
+#include <gtsam/linear/JacobianFactor.h>
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/Values.h>
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -51,7 +53,26 @@ public:
   /** Return the estimate propagated to the requested timestamp. */
   FactorGraphResult get_estimate(double timestamp);
 
+  void communicate(FactorGraphState &neighbor, double timestamp, double neighbor_timestamp, double range, double variance);
+
 private:
+  friend struct FactorGraphDistributedTest;
+
+  struct Summary {
+    uint64_t version;
+    double timestamp;
+    gtsam::JacobianFactor::shared_ptr factor;
+    gtsam::Values values;
+  };
+
+  struct CachedSummary {
+    Summary summary;
+    gtsam::NonlinearFactor::shared_ptr graph_factor;
+  };
+
+  gtsam::Key declare_shared(double timestamp);
+  Summary get_summary(double timestamp);
+  void update_summary(const Summary &summary, size_t origin);
   struct Frame {
     double timestamp = -1;
     gtsam::Key pose_key = 0;
@@ -61,7 +82,14 @@ private:
 
   gtsam::Values current_values() const;
   Frame &ensure_frame(double timestamp);
-  void commit();
+  void commit(bool force_relinearize);
+
+  size_t agent_id;
+  uint64_t summary_version = 0;
+  gtsam::KeySet shared_keys;
+  gtsam::KeySet local_shared_keys;
+  std::map<size_t, CachedSummary> cached_summaries;
+  gtsam::FactorIndices pending_remove_factor_indices;
 
   std::unique_ptr<gtsam::ISAM2> optimizer;
   gtsam::NonlinearFactorGraph pending_factors;

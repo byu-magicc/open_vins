@@ -103,6 +103,9 @@ def launch_setup(context):
                 "max_cameras": "1",
                 "use_stereo": "false",
                 "use_factor_graph": "true",
+                "range_stddev": LaunchConfiguration("range_stddev"),
+                "range_probability": LaunchConfiguration("range_probability"),
+                "range_seed": LaunchConfiguration("range_seed"),
                 "relinearize_skip": LaunchConfiguration("relinearize_skip"),
                 "relinearize_threshold": LaunchConfiguration(
                     "relinearize_threshold"
@@ -123,6 +126,9 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("agent_names", default_value="center,left,right"),
+            DeclareLaunchArgument("range_stddev", default_value="1.0"),
+            DeclareLaunchArgument("range_probability", default_value="0.006"),
+            DeclareLaunchArgument("range_seed", default_value="5"),
             DeclareLaunchArgument("rviz_enable", default_value="false"),
             DeclareLaunchArgument("save_results", default_value="false"),
             DeclareLaunchArgument("results_path", default_value="results"),
