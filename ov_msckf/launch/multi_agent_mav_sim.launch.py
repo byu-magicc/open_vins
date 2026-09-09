@@ -104,8 +104,9 @@ def launch_setup(context):
                 "use_stereo": "false",
                 "use_factor_graph": "true",
                 "range_stddev": LaunchConfiguration("range_stddev"),
-                "range_probability": LaunchConfiguration("range_probability"),
-                "range_seed": LaunchConfiguration("range_seed"),
+                "range_interval": LaunchConfiguration("range_interval"),
+                "range_jitter_fraction": LaunchConfiguration("range_jitter_fraction"),
+                "seed": LaunchConfiguration("seed"),
                 "relinearize_skip": LaunchConfiguration("relinearize_skip"),
                 "relinearize_threshold": LaunchConfiguration(
                     "relinearize_threshold"
@@ -127,8 +128,9 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("agent_names", default_value="center,left,right"),
             DeclareLaunchArgument("range_stddev", default_value="1.0"),
-            DeclareLaunchArgument("range_probability", default_value="0.006"),
-            DeclareLaunchArgument("range_seed", default_value="5"),
+            DeclareLaunchArgument("range_interval", default_value="15.0"),
+            DeclareLaunchArgument("range_jitter_fraction", default_value="0.6"),
+            DeclareLaunchArgument("seed", default_value="5"),
             DeclareLaunchArgument("rviz_enable", default_value="false"),
             DeclareLaunchArgument("save_results", default_value="false"),
             DeclareLaunchArgument("results_path", default_value="results"),

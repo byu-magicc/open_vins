@@ -217,7 +217,6 @@ def main():
             if buffer == 0.0:
                 buffer = np.finfo(float).eps
             plot.set_ylim(openvins_lower - buffer, openvins_upper + buffer)
-            plot.grid(True, alpha=0.3)
             if row == 0:
                 plot.set_title(("x", "y", "z")[axis])
             if axis == 0:

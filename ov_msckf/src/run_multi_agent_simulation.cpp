@@ -79,6 +79,12 @@ struct SimulatedAgent {
   }
 };
 
+struct RangeSchedule {
+  size_t owner_index;
+  size_t neighbor_index;
+  double next_elapsed;
+};
+
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   rclcpp::NodeOptions options;
@@ -95,16 +101,17 @@ int main(int argc, char **argv) {
     node->get_parameter("visualize", visualize);
     const double range_stddev = node->get_parameter("range_stddev").as_double();
     const double range_variance = range_stddev * range_stddev;
-    const double range_probability = node->get_parameter("range_probability").as_double();
-    const int64_t range_seed = node->get_parameter("range_seed").as_int();
+    const double range_interval = node->get_parameter("range_interval").as_double();
+    const double range_jitter_fraction = node->get_parameter("range_jitter_fraction").as_double();
+    const int64_t simulation_seed = node->get_parameter("sim_seed_measurements").as_int();
     if (!std::isfinite(range_stddev) || range_stddev <= 0 || !std::isfinite(range_variance) || range_variance <= 0 ||
-        !std::isfinite(range_probability) || range_probability < 0 || range_probability > 1 || range_seed < 0 ||
-        range_seed > std::numeric_limits<uint32_t>::max())
-      throw std::invalid_argument("Invalid range standard deviation, probability, or seed");
-    std::mt19937 event_generator(static_cast<uint32_t>(range_seed));
-    std::seed_seq noise_seed{static_cast<uint32_t>(range_seed), 1u};
-    std::mt19937 noise_generator(noise_seed);
-    std::bernoulli_distribution range_event(range_probability);
+        !std::isfinite(range_interval) || range_interval <= 0 || !std::isfinite(range_jitter_fraction) || range_jitter_fraction < 0 ||
+        range_jitter_fraction >= 1 || simulation_seed < 0 || simulation_seed > std::numeric_limits<uint32_t>::max())
+      throw std::invalid_argument("Invalid range standard deviation, interval, jitter, or simulation seed");
+    std::mt19937 random_generator(static_cast<uint32_t>(simulation_seed));
+    std::uniform_real_distribution<double> initial_range_phase(0.0, range_interval);
+    std::uniform_real_distribution<double> next_range_interval(range_interval * (1.0 - range_jitter_fraction),
+                                                               range_interval * (1.0 + range_jitter_fraction));
     std::normal_distribution<double> range_noise(0.0, range_stddev);
     size_t range_count = 0;
     std::ofstream range_results;
@@ -170,6 +177,13 @@ int main(int argc, char **argv) {
     ov_core::Printer::setThreadLabel("multi_agent");
     active_agent = "multi_agent";
 
+    std::vector<RangeSchedule> range_schedules;
+    range_schedules.reserve(agents.size() * (agents.size() - 1) / 2);
+    for (size_t i = 0; i < agents.size(); ++i) {
+      for (size_t j = i + 1; j < agents.size(); ++j)
+        range_schedules.push_back({i, j, initial_range_phase(random_generator)});
+    }
+
     std::mutex barrier_mutex;
     std::condition_variable barrier_condition;
     size_t barrier_arrivals = 0;
@@ -223,31 +237,44 @@ int main(int argc, char **argv) {
           if (barrier_arrivals == agents.size()) {
             if (!failed.load() && rclcpp::ok()) {
               try {
-                for (size_t i = 0; i < agents.size(); ++i) {
-                  auto &owner = *agents[i];
-                  if (owner.processed_time < 0)
+                RangeSchedule *selected_schedule = nullptr;
+                double selected_elapsed = 0.0;
+                double selected_lateness = -std::numeric_limits<double>::infinity();
+                for (auto &schedule : range_schedules) {
+                  const auto &owner = *agents[schedule.owner_index];
+                  const auto &neighbor = *agents[schedule.neighbor_index];
+                  if (owner.processed_time < 0 || neighbor.processed_time < 0)
                     continue;
-                  for (size_t j = i + 1; j < agents.size(); ++j) {
-                    auto &neighbor = *agents[j];
-                    if (neighbor.processed_time < 0 || !range_event(event_generator))
-                      continue;
-                    Eigen::Matrix<double, 17, 1> owner_truth, neighbor_truth;
-                    if (!owner.sim->get_state(owner.processed_time + owner.camera_offset, owner_truth) ||
-                        !neighbor.sim->get_state(neighbor.processed_time + neighbor.camera_offset, neighbor_truth))
-                      throw std::runtime_error("Range epoch has no simulation truth");
-                    const double truth = (owner_truth.segment<3>(5) - neighbor_truth.segment<3>(5)).norm();
-                    const double measurement = std::max(0.0, truth + range_noise(noise_generator));
-                    owner.sys->communicate_range(*neighbor.sys, owner.processed_time, neighbor.processed_time, measurement, range_variance);
-                    ++range_count;
-                    const double elapsed = owner.processed_time + owner.camera_offset - owner.start_time;
-                    RCLCPP_INFO(node->get_logger(), "Range %zu %s <- %s at %.3f s (%.6f, %.6f): truth %.3f m, measured %.3f m", range_count,
-                                owner.name.c_str(), neighbor.name.c_str(), elapsed, owner.processed_time, neighbor.processed_time, truth,
-                                measurement);
-                    if (range_results.is_open()) {
-                      range_results << owner.name << ',' << neighbor.name << ',' << elapsed << ',' << owner.processed_time << ','
-                                    << neighbor.processed_time << ',' << truth << ',' << measurement << ',' << range_variance << '\n';
-                      range_results.flush();
-                    }
+                  const double owner_elapsed = owner.processed_time + owner.camera_offset - owner.start_time;
+                  const double neighbor_elapsed = neighbor.processed_time + neighbor.camera_offset - neighbor.start_time;
+                  const double pair_elapsed = std::min(owner_elapsed, neighbor_elapsed);
+                  const double lateness = pair_elapsed - schedule.next_elapsed;
+                  if (lateness >= 0 && lateness > selected_lateness) {
+                    selected_schedule = &schedule;
+                    selected_elapsed = pair_elapsed;
+                    selected_lateness = lateness;
+                  }
+                }
+                if (selected_schedule != nullptr) {
+                  auto &owner = *agents[selected_schedule->owner_index];
+                  auto &neighbor = *agents[selected_schedule->neighbor_index];
+                  Eigen::Matrix<double, 17, 1> owner_truth, neighbor_truth;
+                  if (!owner.sim->get_state(owner.processed_time + owner.camera_offset, owner_truth) ||
+                      !neighbor.sim->get_state(neighbor.processed_time + neighbor.camera_offset, neighbor_truth))
+                    throw std::runtime_error("Range epoch has no simulation truth");
+                  const double truth = (owner_truth.segment<3>(5) - neighbor_truth.segment<3>(5)).norm();
+                  const double measurement = std::max(0.0, truth + range_noise(random_generator));
+                  owner.sys->communicate_range(*neighbor.sys, owner.processed_time, neighbor.processed_time, measurement, range_variance);
+                  selected_schedule->next_elapsed = selected_elapsed + next_range_interval(random_generator);
+                  ++range_count;
+                  const double elapsed = owner.processed_time + owner.camera_offset - owner.start_time;
+                  RCLCPP_INFO(node->get_logger(), "Range %zu %s <- %s at %.3f s (%.6f, %.6f): truth %.3f m, measured %.3f m", range_count,
+                              owner.name.c_str(), neighbor.name.c_str(), elapsed, owner.processed_time, neighbor.processed_time, truth,
+                              measurement);
+                  if (range_results.is_open()) {
+                    range_results << owner.name << ',' << neighbor.name << ',' << elapsed << ',' << owner.processed_time << ','
+                                  << neighbor.processed_time << ',' << truth << ',' << measurement << ',' << range_variance << '\n';
+                    range_results.flush();
                   }
                 }
                 for (const auto &candidate : agents) {

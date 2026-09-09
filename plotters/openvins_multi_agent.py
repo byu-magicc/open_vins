@@ -246,7 +246,6 @@ class DataPlotter:
         axs[1].set_ylabel('Normed Position Error (m)')
         axs[1].set_title('Position Error of Agents (Global Estimate)')
         axs[1].legend()
-        axs[1].grid()
         axs[1].set_ylim(bottom=0)
 
         plt.tight_layout()
@@ -267,33 +266,27 @@ class DataPlotter:
             axs[0, column_idx].plot(time[key], global_truth_position[key][:, 0], color='blue', label='Truth')
             axs[0, column_idx].plot(time[key], global_estimate_position[key][:, 0], color='red', label='Estimate')
             axs[0, column_idx].set_title(key)
-            axs[0, column_idx].grid()
 
             # Y Position
             axs[1, column_idx].plot(time[key], global_truth_position[key][:, 1], color='blue')
             axs[1, column_idx].plot(time[key], global_estimate_position[key][:, 1], color='red')
-            axs[1, column_idx].grid()
 
             # Z Position
             axs[2, column_idx].plot(time[key], global_truth_position[key][:, 2], color='blue')
             axs[2, column_idx].plot(time[key], global_estimate_position[key][:, 2], color='red')
-            axs[2, column_idx].grid()
 
             # Roll
             axs[3, column_idx].plot(time[key], global_truth_orientation[key][:, 0], color='blue')
             axs[3, column_idx].plot(time[key], global_estimate_orientation[key][:, 0], color='red')
-            axs[3, column_idx].grid()
 
             # Pitch
             axs[4, column_idx].plot(time[key], global_truth_orientation[key][:, 1], color='blue')
             axs[4, column_idx].plot(time[key], global_estimate_orientation[key][:, 1], color='red')
-            axs[4, column_idx].grid()
 
             # Yaw
             axs[5, column_idx].plot(time[key], global_truth_orientation[key][:, 2], color='blue')
             axs[5, column_idx].plot(time[key], global_estimate_orientation[key][:, 2], color='red')
             axs[5, column_idx].set_xlabel('Time (s)')
-            axs[5, column_idx].grid()
 
             for row in range(6):
                 for event_index, range_time in enumerate(range_times[key]):
@@ -333,38 +326,32 @@ class DataPlotter:
             axs[0, column_idx].plot(time[key], global_position_std[key][:, 0]*2, color='blue', label='2 Sigma')
             axs[0, column_idx].plot(time[key], -global_position_std[key][:, 0]*2, color='blue')
             axs[0, column_idx].set_title(key)
-            axs[0, column_idx].grid()
 
             # Y Position
             axs[1, column_idx].plot(time[key], global_position_error[key][:, 1], color='red')
             axs[1, column_idx].plot(time[key], global_position_std[key][:, 1]*2, color='blue')
             axs[1, column_idx].plot(time[key], -global_position_std[key][:, 1]*2, color='blue')
-            axs[1, column_idx].grid()
 
             # Z Position
             axs[2, column_idx].plot(time[key], global_position_error[key][:, 2], color='red')
             axs[2, column_idx].plot(time[key], global_position_std[key][:, 2]*2, color='blue')
             axs[2, column_idx].plot(time[key], -global_position_std[key][:, 2]*2, color='blue')
-            axs[2, column_idx].grid()
 
             # Pitch
             axs[3, column_idx].plot(time[key], global_orientation_error[key][:, 0], color='red')
             axs[3, column_idx].plot(time[key], global_orientation_std[key][:, 0]*2, color='blue')
             axs[3, column_idx].plot(time[key], -global_orientation_std[key][:, 0]*2, color='blue')
-            axs[3, column_idx].grid()
 
             # Roll
             axs[4, column_idx].plot(time[key], global_orientation_error[key][:, 1], color='red')
             axs[4, column_idx].plot(time[key], global_orientation_std[key][:, 1]*2, color='blue')
             axs[4, column_idx].plot(time[key], -global_orientation_std[key][:, 1]*2, color='blue')
-            axs[4, column_idx].grid()
 
             # Yaw
             axs[5, column_idx].plot(time[key], global_orientation_error[key][:, 2], color='red')
             axs[5, column_idx].plot(time[key], global_orientation_std[key][:, 2]*2, color='blue')
             axs[5, column_idx].plot(time[key], -global_orientation_std[key][:, 2]*2, color='blue')
             axs[5, column_idx].set_xlabel('Time (s)')
-            axs[5, column_idx].grid()
 
             for row in range(6):
                 for event_index, range_time in enumerate(range_times[key]):
