@@ -225,9 +225,18 @@ def main():
                 plot.set_xlabel("Time (s)")
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    figure.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.995), ncol=4)
-    figure.suptitle(f"OpenVINS Factor Graph Single-Agent Comparison — {args.results_directory.name}", y=0.965)
-    figure.tight_layout(rect=(0, 0, 1, 0.94))
+    figure.suptitle(
+        f"OpenVINS Factor Graph Single-Agent Comparison — {args.results_directory.name}",
+        y=0.99,
+    )
+    figure.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.965),
+        ncol=len(handles),
+    )
+    figure.tight_layout(rect=(0, 0, 1, 0.925))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(args.output, format="svg")
     plt.close(figure)
