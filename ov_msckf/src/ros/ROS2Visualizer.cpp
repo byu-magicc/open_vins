@@ -273,12 +273,27 @@ void ROS2Visualizer::visualize_odometry(double timestamp) {
   if (!_app->initialized() || (timestamp - _app->initialized_time()) < 1)
     return;
 
-  // Get fast propagate state at the desired timestamp
+  // Get the state exposed by the selected estimator. The factor graph is only
+  // defined at camera update times, while the EKF modes can propagate to the
+  // requested IMU timestamp.
   std::shared_ptr<State> state = _app->get_state();
   Eigen::Matrix<double, 13, 1> state_plus = Eigen::Matrix<double, 13, 1>::Zero();
   Eigen::Matrix<double, 12, 12> cov_plus = Eigen::Matrix<double, 12, 12>::Zero();
-  if (!_app->get_propagator()->fast_state_propagate(state, timestamp, state_plus, cov_plus))
+  if (_app->get_params().reports_factor_graph()) {
+    const EstimatorResult estimator = _app->get_estimator_result();
+    if (!estimator.valid)
+      return;
+    timestamp = estimator.timestamp + state->_calib_dt_CAMtoIMU->value()(0);
+    state_plus.block<7, 1>(0, 0) = estimator.state.block<7, 1>(0, 0);
+    const Eigen::Matrix3d R_GtoI = quat_2_Rot(estimator.state.block<4, 1>(0, 0));
+    state_plus.block<3, 1>(7, 0) = R_GtoI * estimator.state.block<3, 1>(7, 0);
+    Eigen::Matrix<double, 9, 15> transform = Eigen::Matrix<double, 9, 15>::Zero();
+    transform.block<6, 6>(0, 0).setIdentity();
+    transform.block<3, 3>(6, 6) = R_GtoI;
+    cov_plus.block<9, 9>(0, 0) = transform * estimator.covariance * transform.transpose();
+  } else if (!_app->get_propagator()->fast_state_propagate(state, timestamp, state_plus, cov_plus)) {
     return;
+  }
 
   // Publish our odometry message if requested
   if (pub_odomimu->get_subscription_count() != 0) {
@@ -593,6 +608,7 @@ void ROS2Visualizer::publish_state() {
 
   // Get the current state
   std::shared_ptr<State> state = _app->get_state();
+  const EstimatorResult estimator = _app->get_estimator_result();
 
   // We want to publish in the IMU clock frame
   // The timestamp in the state will be the last camera time
@@ -603,19 +619,18 @@ void ROS2Visualizer::publish_state() {
   geometry_msgs::msg::PoseWithCovarianceStamped poseIinM;
   poseIinM.header.stamp = ROSVisualizerHelper::get_time_from_seconds(timestamp_inI);
   poseIinM.header.frame_id = "global";
-  poseIinM.pose.pose.orientation.x = state->_imu->quat()(0);
-  poseIinM.pose.pose.orientation.y = state->_imu->quat()(1);
-  poseIinM.pose.pose.orientation.z = state->_imu->quat()(2);
-  poseIinM.pose.pose.orientation.w = state->_imu->quat()(3);
-  poseIinM.pose.pose.position.x = state->_imu->pos()(0);
-  poseIinM.pose.pose.position.y = state->_imu->pos()(1);
-  poseIinM.pose.pose.position.z = state->_imu->pos()(2);
+  poseIinM.pose.pose.orientation.x = estimator.state(0);
+  poseIinM.pose.pose.orientation.y = estimator.state(1);
+  poseIinM.pose.pose.orientation.z = estimator.state(2);
+  poseIinM.pose.pose.orientation.w = estimator.state(3);
+  poseIinM.pose.pose.position.x = estimator.state(4);
+  poseIinM.pose.pose.position.y = estimator.state(5);
+  poseIinM.pose.pose.position.z = estimator.state(6);
 
   // Finally set the covariance in the message (in the order position then orientation as per ros convention)
-  std::vector<std::shared_ptr<Type>> statevars;
-  statevars.push_back(state->_imu->pose()->p());
-  statevars.push_back(state->_imu->pose()->q());
-  Eigen::Matrix<double, 6, 6> covariance_posori = StateHelper::get_marginal_covariance(_app->get_state(), statevars);
+  Eigen::Matrix<double, 6, 6> covariance_posori;
+  covariance_posori << estimator.covariance.block<3, 3>(3, 3), estimator.covariance.block<3, 3>(3, 0),
+      estimator.covariance.block<3, 3>(0, 3), estimator.covariance.block<3, 3>(0, 0);
   for (int r = 0; r < 6; r++) {
     for (int c = 0; c < 6; c++) {
       poseIinM.pose.covariance[6 * r + c] = covariance_posori(r, c);
@@ -728,7 +743,8 @@ void ROS2Visualizer::publish_groundtruth() {
   }
 
   // Get the GT and system state state
-  Eigen::Matrix<double, 16, 1> state_ekf = _app->get_state()->_imu->value();
+  const EstimatorResult estimator = _app->get_estimator_result();
+  const Eigen::Matrix<double, 16, 1> state_ekf = estimator.state;
 
   // Create pose of IMU
   geometry_msgs::msg::PoseStamped poseIinM;
@@ -793,10 +809,7 @@ void ROS2Visualizer::publish_groundtruth() {
   //==========================================================================
 
   // Get covariance of pose
-  std::vector<std::shared_ptr<Type>> statevars;
-  statevars.push_back(_app->get_state()->_imu->q());
-  statevars.push_back(_app->get_state()->_imu->p());
-  Eigen::Matrix<double, 6, 6> covariance = StateHelper::get_marginal_covariance(_app->get_state(), statevars);
+  const Eigen::Matrix<double, 6, 6> covariance = estimator.covariance.block<6, 6>(0, 0);
 
   // Calculate NEES values
   // NOTE: need to manually multiply things out to make static asserts work

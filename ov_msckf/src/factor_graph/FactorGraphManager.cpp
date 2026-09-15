@@ -23,6 +23,8 @@
 
 #include "state/State.h"
 #include "state/StateHelper.h"
+#include "types/Landmark.h"
+#include "types/LandmarkRepresentation.h"
 #include "types/Type.h"
 
 using namespace ov_msckf;
@@ -84,6 +86,83 @@ void FactorGraphManager::apply_pending_global_factors(double timestamp) { state-
 void FactorGraphManager::finish_camera_update() { state->finish_update(); }
 
 FactorGraphResult FactorGraphManager::get_estimate(double timestamp) { return state->get_estimate(timestamp); }
+
+bool FactorGraphManager::reset_openvins(const std::shared_ptr<State> &openvins_state, std::string &error) {
+  std::vector<FactorGraphResetVariable> requests;
+  std::vector<std::shared_ptr<ov_type::Type>> variables;
+  auto append = [&](FactorGraphResetVariable request, const std::shared_ptr<ov_type::Type> &variable) {
+    requests.push_back(request);
+    variables.push_back(variable);
+  };
+  FactorGraphResetVariable request;
+  request.type = FactorGraphResetVariableType::IMU;
+  request.timestamp = openvins_state->_timestamp;
+  append(request, openvins_state->_imu);
+  if (openvins_state->_options.do_calib_imu_intrinsics) {
+    request = {};
+    request.type = FactorGraphResetVariableType::IMU_DW;
+    append(request, openvins_state->_calib_imu_dw);
+    request.type = FactorGraphResetVariableType::IMU_DA;
+    append(request, openvins_state->_calib_imu_da);
+    if (openvins_state->_options.do_calib_imu_g_sensitivity) {
+      request.type = FactorGraphResetVariableType::IMU_TG;
+      append(request, openvins_state->_calib_imu_tg);
+    }
+    request.type = FactorGraphResetVariableType::IMU_ROTATION;
+    append(request, openvins_state->_options.imu_model == StateOptions::ImuModel::KALIBR
+                        ? std::static_pointer_cast<ov_type::Type>(openvins_state->_calib_imu_GYROtoIMU)
+                        : std::static_pointer_cast<ov_type::Type>(openvins_state->_calib_imu_ACCtoIMU));
+  }
+  if (openvins_state->_options.do_calib_camera_timeoffset) {
+    request = {};
+    request.type = FactorGraphResetVariableType::CAMERA_TIME_OFFSET;
+    append(request, openvins_state->_calib_dt_CAMtoIMU);
+  }
+  for (int camera_id = 0; camera_id < openvins_state->_options.num_cameras; ++camera_id) {
+    request = {};
+    request.id = camera_id;
+    if (openvins_state->_options.do_calib_camera_pose) {
+      request.type = FactorGraphResetVariableType::CAMERA_EXTRINSICS;
+      append(request, openvins_state->_calib_IMUtoCAM.at(camera_id));
+    }
+    if (openvins_state->_options.do_calib_camera_intrinsics) {
+      request.type = FactorGraphResetVariableType::CAMERA_INTRINSICS;
+      append(request, openvins_state->_cam_intrinsics.at(camera_id));
+    }
+  }
+  for (const auto &clone : openvins_state->_clones_IMU) {
+    request = {};
+    request.type = FactorGraphResetVariableType::CLONE;
+    request.timestamp = clone.first;
+    append(request, clone.second);
+  }
+  for (const auto &feature : openvins_state->_features_SLAM) {
+    request = {};
+    request.id = feature.first;
+    if (feature.second->_feat_representation == ov_type::LandmarkRepresentation::GLOBAL_3D) {
+      request.type = FactorGraphResetVariableType::LANDMARK_GLOBAL;
+    } else if (feature.second->_feat_representation == ov_type::LandmarkRepresentation::ANCHORED_3D) {
+      request.type = FactorGraphResetVariableType::LANDMARK_ANCHORED;
+      request.anchor_timestamp = feature.second->_anchor_clone_timestamp;
+      request.anchor_camera_id = feature.second->_anchor_cam_id;
+    } else {
+      error = "hybrid reset requires GLOBAL_3D or ANCHORED_3D persistent landmarks";
+      return false;
+    }
+    append(request, feature.second);
+  }
+
+  const FactorGraphResetSnapshot snapshot = state->get_reset_snapshot(requests);
+  if (!snapshot.valid) {
+    error = snapshot.error;
+    return false;
+  }
+  if (!StateHelper::reset(openvins_state, variables, snapshot.values, snapshot.covariance, error))
+    return false;
+  for (const auto &camera : openvins_state->_cam_intrinsics)
+    openvins_state->_cam_intrinsics_cameras.at(camera.first)->set_value(camera.second->value());
+  return true;
+}
 
 void FactorGraphManager::communicate(FactorGraphManager &neighbor, double timestamp, double neighbor_timestamp, double range,
                                      double variance) {

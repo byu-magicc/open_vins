@@ -102,7 +102,7 @@ def launch_setup(context):
                 "config": "magicc_fixedwing_sim",
                 "max_cameras": "1",
                 "use_stereo": "false",
-                "use_factor_graph": "true",
+                "filter_type": LaunchConfiguration("filter_type"),
                 "range_stddev": LaunchConfiguration("range_stddev"),
                 "range_interval": LaunchConfiguration("range_interval"),
                 "range_jitter_fraction": LaunchConfiguration("range_jitter_fraction"),
@@ -127,6 +127,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("agent_names", default_value="center,left,right"),
+            DeclareLaunchArgument("filter_type", default_value="openvins"),
             DeclareLaunchArgument("range_stddev", default_value="1.0"),
             DeclareLaunchArgument("range_interval", default_value="15.0"),
             DeclareLaunchArgument("range_jitter_fraction", default_value="0.6"),

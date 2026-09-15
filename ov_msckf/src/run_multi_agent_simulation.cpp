@@ -71,10 +71,6 @@ struct SimulatedAgent {
       if (sim->get_state(camera_time + camera_offset, groundtruth))
         sys->record_groundtruth(camera_time, groundtruth.segment<16>(1));
     }
-    if (viz) {
-      viz->visualize();
-      viz->visualize_odometry(camera_time + camera_offset);
-    }
     camera_time = -1;
   }
 };
@@ -153,7 +149,7 @@ int main(int argc, char **argv) {
       }
       params.set_results_namespace(names.at(index));
       params.factor_graph_agent_id = index;
-      params.defer_factor_graph_results = true;
+      params.defer_results = true;
       params.num_opencv_threads = 0;
       params.use_multi_threading_pubs = false;
       params.use_multi_threading_subs = false;
@@ -264,7 +260,8 @@ int main(int argc, char **argv) {
                     throw std::runtime_error("Range epoch has no simulation truth");
                   const double truth = (owner_truth.segment<3>(5) - neighbor_truth.segment<3>(5)).norm();
                   const double measurement = std::max(0.0, truth + range_noise(random_generator));
-                  owner.sys->communicate_range(*neighbor.sys, owner.processed_time, neighbor.processed_time, measurement, range_variance);
+                  if (owner.sys->get_params().runs_factor_graph())
+                    owner.sys->communicate_range(*neighbor.sys, owner.processed_time, neighbor.processed_time, measurement, range_variance);
                   selected_schedule->next_elapsed = selected_elapsed + next_range_interval(random_generator);
                   ++range_count;
                   const double elapsed = owner.processed_time + owner.camera_offset - owner.start_time;
@@ -278,8 +275,13 @@ int main(int argc, char **argv) {
                   }
                 }
                 for (const auto &candidate : agents) {
-                  if (candidate->processed_time >= 0)
+                  if (candidate->processed_time >= 0) {
                     candidate->sys->record_estimator_results();
+                    if (candidate->viz) {
+                      candidate->viz->visualize();
+                      candidate->viz->visualize_odometry(candidate->processed_time + candidate->camera_offset);
+                    }
+                  }
                 }
               } catch (...) {
                 worker_error = std::current_exception();
@@ -312,7 +314,6 @@ int main(int argc, char **argv) {
           agent->viz->visualize_final();
           agent->viz.reset();
         }
-        agent->sys.reset();
         RCLCPP_INFO(node->get_logger(), "[%s] completed at elapsed %.6f s", agent->name.c_str(),
                     agent->sim->current_timestamp() - agent->start_time);
       });
@@ -321,7 +322,14 @@ int main(int argc, char **argv) {
       worker.join();
     if (worker_error)
       std::rethrow_exception(worker_error);
-    RCLCPP_INFO(node->get_logger(), "Completed %zu range measurements", range_count);
+    size_t successful_resets = 0;
+    size_t skipped_resets = 0;
+    for (const auto &agent : agents) {
+      successful_resets += agent->sys->successful_resets();
+      skipped_resets += agent->sys->skipped_resets();
+    }
+    RCLCPP_INFO(node->get_logger(), "Completed %zu range measurements; hybrid vehicle resets: %zu successful, %zu skipped", range_count,
+                successful_resets, skipped_resets);
     agents.clear();
   } catch (const std::exception &error) {
     RCLCPP_ERROR(node->get_logger(), "[%s] %s", active_agent.c_str(), error.what());

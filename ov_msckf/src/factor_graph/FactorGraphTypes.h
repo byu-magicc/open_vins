@@ -89,6 +89,37 @@ struct FactorGraphResult {
   double update_seconds = 0;
 };
 
+enum class FactorGraphResetVariableType {
+  IMU,
+  IMU_DW,
+  IMU_DA,
+  IMU_TG,
+  IMU_ROTATION,
+  CAMERA_TIME_OFFSET,
+  CAMERA_EXTRINSICS,
+  CAMERA_INTRINSICS,
+  CLONE,
+  LANDMARK_GLOBAL,
+  LANDMARK_ANCHORED,
+};
+
+/** A requested OpenVINS variable in active-state covariance order. */
+struct FactorGraphResetVariable {
+  FactorGraphResetVariableType type;
+  size_t id = 0;
+  double timestamp = -1;
+  double anchor_timestamp = -1;
+  size_t anchor_camera_id = 0;
+};
+
+/** Graph posterior converted into OpenVINS values and error coordinates. */
+struct FactorGraphResetSnapshot {
+  bool valid = false;
+  std::string error;
+  std::vector<Eigen::VectorXd> values;
+  Eigen::MatrixXd covariance;
+};
+
 } // namespace ov_msckf
 
 #endif // OV_MSCKF_FACTORGRAPHTYPES_H

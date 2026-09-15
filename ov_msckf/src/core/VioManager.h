@@ -46,6 +46,13 @@ class InertialInitializer;
 
 namespace ov_msckf {
 
+struct EstimatorResult {
+  double timestamp = -1;
+  bool valid = false;
+  Eigen::Matrix<double, 16, 1> state = Eigen::Matrix<double, 16, 1>::Zero();
+  Eigen::Matrix<double, 15, 15> covariance = Eigen::Matrix<double, 15, 15>::Zero();
+};
+
 class State;
 class StateHelper;
 class FactorGraphManager;
@@ -118,7 +125,10 @@ public:
   void record_groundtruth(double timestamp, const Eigen::Matrix<double, 16, 1> &groundtruth);
 
   void record_estimator_results();
+  EstimatorResult get_estimator_result();
   void communicate_range(VioManager &neighbor, double timestamp, double neighbor_timestamp, double range, double variance);
+  size_t successful_resets() const { return reset_success_count; }
+  size_t skipped_resets() const { return reset_skip_count; }
 
   /// Accessor to get the current state
   std::shared_ptr<State> get_state() { return state; }
@@ -181,8 +191,10 @@ protected:
    */
   bool try_to_initialize(const ov_core::CameraData &message);
 
-  /** Commit the graph update and record aligned OpenVINS/factor-graph results. */
+  /** Commit a pending graph update and record the selected estimator result. */
   void finish_factor_graph_update();
+  void reset_from_factor_graph();
+  void finish_openvins_reset();
 
   /**
    * @brief This function will will re-triangulate all features in the current frame
@@ -238,9 +250,12 @@ protected:
 
   // Timing statistic file and variables
   std::ofstream of_statistics;
-  std::ofstream openvins_results;
-  std::ofstream factor_graph_results;
+  std::ofstream estimator_results;
   std::ofstream groundtruth_results;
+  size_t reset_success_count = 0;
+  size_t reset_skip_count = 0;
+  bool estimator_result_cache_valid = false;
+  EstimatorResult estimator_result_cache;
   boost::posix_time::ptime rT1, rT2, rT3, rT4, rT5, rT6, rT7;
 
   // Track how much distance we have traveled

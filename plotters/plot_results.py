@@ -2,11 +2,11 @@
 """Plot recorded OpenVINS results for one or more agents.
 
 Usage:
-    python3 plotters/openvins_multi_agent.py results plots
+    python3 plotters/plot_results.py results plots
 
 The results directory may either be one agent directory, or a directory whose
 immediate children are agent directories. Each agent directory must contain
-``openvins.csv`` and ``groundtruth.csv`` as written with ``save_results:=true``.
+``estimate.csv`` and ``groundtruth.csv`` as written with ``save_results:=true``.
 If present, the fleet-level ``ranges.csv`` supplies range-event annotations.
 The script writes the same three SVG plots and NPZ data archive as the former
 ROS plotter into the output directory.
@@ -42,13 +42,13 @@ def load_csv(path, required_columns):
 class DataPlotter:
     def __init__(self, results_directory, output_directory):
         self.output_directory = output_directory
-        if (results_directory / 'openvins.csv').is_file() and (results_directory / 'groundtruth.csv').is_file():
+        if (results_directory / 'estimate.csv').is_file() and (results_directory / 'groundtruth.csv').is_file():
             agent_directories = [results_directory]
         else:
             agent_directories = sorted(
                 directory for directory in results_directory.iterdir()
                 if directory.is_dir()
-                and (directory / 'openvins.csv').is_file()
+                and (directory / 'estimate.csv').is_file()
                 and (directory / 'groundtruth.csv').is_file()
             )
         if not agent_directories:
@@ -66,7 +66,7 @@ class DataPlotter:
         self.global_orientation_std = {}
         for directory in agent_directories:
             truth = load_csv(directory / 'groundtruth.csv', state_columns)
-            estimate = load_csv(directory / 'openvins.csv', estimator_columns)
+            estimate = load_csv(directory / 'estimate.csv', estimator_columns)
             timestamps = np.intersect1d(truth['timestamp'], estimate['timestamp'])
             if timestamps.size < 2:
                 raise ValueError(f"Fewer than two timestamps match in {directory}")

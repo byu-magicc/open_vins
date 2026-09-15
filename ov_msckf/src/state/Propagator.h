@@ -95,6 +95,12 @@ public:
    */
   void invalidate_cache() { cache_imu_valid = false; }
 
+  void reset_time_offset(double time_offset) {
+    last_prop_time_offset = time_offset;
+    have_last_prop_time_offset = true;
+    invalidate_cache();
+  }
+
   /**
    * @brief Propagate state up to given timestamp and then clone
    *

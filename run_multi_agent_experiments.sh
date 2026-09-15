@@ -24,7 +24,7 @@ for argument in "$@"; do
       usage
       exit 0
       ;;
-    save_results:=*|results_path:=*)
+    save_results:=*|results_path:=*|filter_type:=*)
       echo "Error: ${argument%%:=*} is managed by this script." >&2
       exit 2
       ;;
@@ -45,6 +45,7 @@ set -u
 cd "${workspace_directory}"
 colcon build \
   --symlink-install \
+  --cmake-clean-cache \
   --cmake-args \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -DCMAKE_BUILD_TYPE=Release
@@ -57,30 +58,37 @@ run_directory="${workspace_directory}/runs/${run_name}"
 results_directory="${run_directory}/results"
 plots_directory="${run_directory}/plots"
 ros_logs_directory="${run_directory}/ros_logs"
+export MPLCONFIGDIR="${run_directory}/matplotlib"
 
 if [[ -e "${run_directory}" ]]; then
   echo "Error: run directory already exists: ${run_directory}" >&2
   exit 1
 fi
-mkdir -p "${results_directory}" "${plots_directory}" "${ros_logs_directory}"
-export ROS_LOG_DIR="${ros_logs_directory}"
+mkdir -p "${results_directory}" "${plots_directory}" "${ros_logs_directory}" "${MPLCONFIGDIR}"
 
-ros2 launch ov_msckf multi_agent_mav_sim.launch.py \
-  "${launch_arguments[@]}" \
-  save_results:=true \
-  results_path:="${results_directory}"
-
-/usr/bin/python3 "${repository_directory}/plotters/openvins_multi_agent.py" \
-  "${results_directory}" \
-  "${plots_directory}"
+for filter_type in openvins factor_graph hybrid; do
+  mode_results="${results_directory}/${filter_type}"
+  mode_plots="${plots_directory}/${filter_type}"
+  export ROS_LOG_DIR="${ros_logs_directory}/${filter_type}"
+  mkdir -p "${mode_results}" "${mode_plots}" "${ROS_LOG_DIR}"
+  ros2 launch ov_msckf multi_agent_mav_sim.launch.py \
+    "${launch_arguments[@]}" \
+    filter_type:="${filter_type}" \
+    save_results:=true \
+    results_path:="${mode_results}"
+  /usr/bin/python3 "${repository_directory}/plotters/plot_results.py" \
+    "${mode_results}" \
+    "${mode_plots}"
+done
 
 agent_count=0
-for agent_directory in "${results_directory}"/*; do
+for agent_directory in "${results_directory}/openvins"/*; do
   [[ -d "${agent_directory}" ]] || continue
   agent_name=$(basename -- "${agent_directory}")
-  /usr/bin/python3 "${repository_directory}/plotters/openvins_factor_graph_single_agent_comparison.py" \
-    "${agent_directory}" \
-    "${plots_directory}/${agent_name}_openvins_vs_factor_graph.svg"
+  /usr/bin/python3 "${repository_directory}/plotters/compare_estimators.py" \
+    "${results_directory}" \
+    "${agent_name}" \
+    "${plots_directory}/${agent_name}_estimator_comparison.svg"
   ((agent_count += 1))
 done
 

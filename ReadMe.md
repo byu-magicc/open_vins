@@ -5,20 +5,24 @@ To use, build and run `Containerfile` with Podman or a similar program:
 ```bash
 podman build -t open_vins . &&
 podman run --name open_vins_sim open_vins \
-  ./src/open_vins/run_multi_agent_experiment.sh &&
+  ./src/open_vins/run_multi_agent_experiments.sh &&
 mkdir -p runs &&
 podman cp open_vins_sim:/open_vins_ws/runs/. runs/ &&
 podman rm open_vins_sim
 ```
 
-The script builds the workspace, runs the multi-agent simulation with result
-recording enabled, and generates the aggregate and per-agent comparison plots.
-Each experiment is stored in a timestamped directory under `runs/`. ROS launch
-arguments can be passed directly to the script, for example:
+The script builds the workspace, runs the multi-agent simulation in OpenVINS,
+factor-graph, and hybrid modes, and generates per-mode and three-estimator
+comparison plots. Each experiment is stored in a timestamped directory under
+`runs/`. ROS launch arguments can be passed directly to the script, for example:
 
 ```bash
-./src/open_vins/run_multi_agent_experiment.sh rviz_enable:=true
+./src/open_vins/run_multi_agent_experiments.sh rviz_enable:=true
 ```
+
+For an individual launch, set `filter_type:=openvins`,
+`filter_type:=factor_graph`, or `filter_type:=hybrid`. The default is
+`openvins`. Each run saves only the selected estimator to `estimate.csv`.
 
 Note that OpenVINS supports very old versions of Ubuntu and ROS, but this fork is intended for use with Ubuntu 24 and ROS2 Jazzy only.
 

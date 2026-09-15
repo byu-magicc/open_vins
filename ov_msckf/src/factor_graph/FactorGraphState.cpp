@@ -282,7 +282,7 @@ void FactorGraphState::initialize(const FactorGraphInitialization &initializatio
   const gtsam::JacobianFactor joint_prior(terms, gtsam::Vector::Zero(covariance_size), gtsam::noiseModel::Unit::Create(covariance_size));
   pending_factors.emplace_shared<gtsam::LinearContainerFactor>(joint_prior, initial_values);
   pending_values.insert(initial_values);
-  commit(false);
+  commit();
   initialized = true;
 }
 
@@ -476,16 +476,15 @@ void FactorGraphState::add_visual_factors(const FactorGraphVisualUpdate &update)
   }
 }
 
-void FactorGraphState::commit(bool force_relinearize) {
+void FactorGraphState::commit() {
   if (failed)
     throw std::runtime_error("Factor graph is unavailable after an earlier solver failure");
-  if (!force_relinearize && pending_factors.empty() && pending_values.empty() && pending_remove_factor_indices.empty())
+  if (pending_factors.empty() && pending_values.empty() && pending_remove_factor_indices.empty())
     return;
   const auto start = std::chrono::steady_clock::now();
   try {
     gtsam::ISAM2UpdateParams update_params;
     update_params.removeFactorIndices = pending_remove_factor_indices;
-    update_params.force_relinearize = force_relinearize;
     optimizer->update(pending_factors, pending_values, update_params);
   } catch (const std::exception &exception) {
     PRINT_ERROR("[FACTOR-GRAPH]: disabling parallel estimator after iSAM2 failure: %s\n", exception.what());
@@ -493,8 +492,6 @@ void FactorGraphState::commit(bool force_relinearize) {
     pending_factors.resize(0);
     pending_values.clear();
     pending_remove_factor_indices.clear();
-    if (force_relinearize)
-      throw;
     return;
   }
   last_update_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
@@ -526,7 +523,7 @@ void FactorGraphState::apply_pending_global_factors(double timestamp) {
                                                      gtsam::noiseModel::Gaussian::Covariance(gps.cov_z_global));
   }
   gps_buffer.clear();
-  commit(false);
+  commit();
 }
 
 FactorGraphResult FactorGraphState::get_estimate(double timestamp) {
@@ -636,11 +633,250 @@ FactorGraphResult FactorGraphState::get_estimate(double timestamp) {
   return estimate;
 }
 
+FactorGraphResetSnapshot FactorGraphState::get_reset_snapshot(const std::vector<FactorGraphResetVariable> &variables) {
+  std::lock_guard<std::mutex> lock(mutex);
+  FactorGraphResetSnapshot snapshot;
+  try {
+    if (!initialized || failed)
+      throw std::runtime_error("factor graph is not initialized and healthy");
+    commit();
+    const gtsam::Values values = optimizer->calculateEstimate();
+    gtsam::KeyVector keys;
+    std::vector<int> dimensions;
+    auto add_key = [&](gtsam::Key key, int dimension) {
+      if (!values.exists(key))
+        throw std::runtime_error("requested reset variable is missing from factor graph");
+      if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+        keys.push_back(key);
+        dimensions.push_back(dimension);
+      }
+    };
+    auto frame_at = [&](double timestamp) -> const Frame & {
+      const auto frame = frames.find(timestamp);
+      if (frame == frames.end())
+        throw std::runtime_error("requested reset timestamp is missing from factor graph");
+      return frame->second;
+    };
+    for (const auto &variable : variables) {
+      switch (variable.type) {
+      case FactorGraphResetVariableType::IMU: {
+        const Frame &frame = frame_at(variable.timestamp);
+        add_key(frame.pose_key, 6);
+        add_key(frame.velocity_key, 3);
+        add_key(frame.bias_key, 6);
+        break;
+      }
+      case FactorGraphResetVariableType::CLONE:
+        add_key(frame_at(variable.timestamp).pose_key, 6);
+        break;
+      case FactorGraphResetVariableType::LANDMARK_GLOBAL:
+      case FactorGraphResetVariableType::LANDMARK_ANCHORED: {
+        const auto landmark = landmark_keys.find(variable.id);
+        if (landmark == landmark_keys.end())
+          throw std::runtime_error("active OpenVINS landmark is missing from factor graph");
+        add_key(landmark->second, 3);
+        if (variable.type == FactorGraphResetVariableType::LANDMARK_ANCHORED) {
+          add_key(frame_at(variable.anchor_timestamp).pose_key, 6);
+          const auto calibration = camera_calibrations.find(variable.anchor_camera_id);
+          if (calibration == camera_calibrations.end())
+            throw std::runtime_error("landmark anchor camera is missing from factor graph");
+          if (calibration->second.estimate_extrinsics)
+            add_key(calibration->second.extrinsic_key, 6);
+        }
+        break;
+      }
+      case FactorGraphResetVariableType::IMU_DW:
+        add_key(dw_key(), 6);
+        break;
+      case FactorGraphResetVariableType::IMU_DA:
+        add_key(da_key(), 6);
+        break;
+      case FactorGraphResetVariableType::IMU_TG:
+        add_key(tg_key(), 9);
+        break;
+      case FactorGraphResetVariableType::IMU_ROTATION:
+        add_key(imu_rotation_key(), 3);
+        break;
+      case FactorGraphResetVariableType::CAMERA_TIME_OFFSET:
+        add_key(time_offset_key(), 1);
+        break;
+      case FactorGraphResetVariableType::CAMERA_EXTRINSICS:
+        add_key(camera_calibrations.at(variable.id).extrinsic_key, 6);
+        break;
+      case FactorGraphResetVariableType::CAMERA_INTRINSICS:
+        add_key(camera_calibrations.at(variable.id).intrinsic_key, 8);
+        break;
+      }
+    }
+
+    std::map<gtsam::Key, int> key_columns;
+    int graph_dimension = 0;
+    for (size_t index = 0; index < keys.size(); ++index) {
+      key_columns.emplace(keys.at(index), graph_dimension);
+      graph_dimension += dimensions.at(index);
+    }
+    int output_dimension = 0;
+    for (const auto &variable : variables)
+      output_dimension +=
+          variable.type == FactorGraphResetVariableType::IMU ? 15
+          : variable.type == FactorGraphResetVariableType::IMU_DW || variable.type == FactorGraphResetVariableType::IMU_DA ||
+                  variable.type == FactorGraphResetVariableType::CAMERA_EXTRINSICS || variable.type == FactorGraphResetVariableType::CLONE
+              ? 6
+          : variable.type == FactorGraphResetVariableType::IMU_TG             ? 9
+          : variable.type == FactorGraphResetVariableType::CAMERA_INTRINSICS  ? 8
+          : variable.type == FactorGraphResetVariableType::CAMERA_TIME_OFFSET ? 1
+                                                                              : 3;
+    Eigen::MatrixXd mapping = Eigen::MatrixXd::Zero(output_dimension, graph_dimension);
+    int row = 0;
+    for (const auto &variable : variables) {
+      Eigen::VectorXd output;
+      switch (variable.type) {
+      case FactorGraphResetVariableType::IMU: {
+        const Frame &frame = frame_at(variable.timestamp);
+        const auto pose = values.at<gtsam::Pose3>(frame.pose_key);
+        const auto velocity = values.at<gtsam::Vector3>(frame.velocity_key);
+        const auto bias = values.at<gtsam::imuBias::ConstantBias>(frame.bias_key);
+        output = Eigen::VectorXd::Zero(16);
+        output.segment<4>(0) = ov_core::rot_2_quat(pose.rotation().matrix().transpose());
+        output.segment<3>(4) = pose.translation();
+        output.segment<3>(7) = velocity;
+        output.segment<3>(10) = bias.gyroscope();
+        output.segment<3>(13) = bias.accelerometer();
+        mapping.block<3, 3>(row, key_columns.at(frame.pose_key)).setIdentity();
+        mapping.block<3, 3>(row + 3, key_columns.at(frame.pose_key) + 3) = pose.rotation().matrix();
+        mapping.block<3, 3>(row + 6, key_columns.at(frame.velocity_key)).setIdentity();
+        mapping.block<3, 3>(row + 9, key_columns.at(frame.bias_key) + 3).setIdentity();
+        mapping.block<3, 3>(row + 12, key_columns.at(frame.bias_key)).setIdentity();
+        row += 15;
+        break;
+      }
+      case FactorGraphResetVariableType::CLONE: {
+        const gtsam::Key key = frame_at(variable.timestamp).pose_key;
+        const auto pose = values.at<gtsam::Pose3>(key);
+        output.resize(7);
+        output.head<4>() = ov_core::rot_2_quat(pose.rotation().matrix().transpose());
+        output.tail<3>() = pose.translation();
+        mapping.block<3, 3>(row, key_columns.at(key)).setIdentity();
+        mapping.block<3, 3>(row + 3, key_columns.at(key) + 3) = pose.rotation().matrix();
+        row += 6;
+        break;
+      }
+      case FactorGraphResetVariableType::LANDMARK_GLOBAL:
+      case FactorGraphResetVariableType::LANDMARK_ANCHORED: {
+        const gtsam::Key point_key = landmark_keys.at(variable.id);
+        const gtsam::Point3 point = values.at<gtsam::Point3>(point_key);
+        output.resize(3);
+        if (variable.type == FactorGraphResetVariableType::LANDMARK_GLOBAL) {
+          output = point;
+          mapping.block<3, 3>(row, key_columns.at(point_key)).setIdentity();
+        } else {
+          const gtsam::Key anchor_key = frame_at(variable.anchor_timestamp).pose_key;
+          const auto calibration = camera_calibrations.at(variable.anchor_camera_id);
+          const gtsam::Pose3 anchor = values.at<gtsam::Pose3>(anchor_key);
+          const gtsam::Pose3 extrinsics =
+              calibration.estimate_extrinsics ? values.at<gtsam::Pose3>(calibration.extrinsic_key) : calibration.imu_T_camera;
+          gtsam::Matrix66 camera_H_anchor, camera_H_extrinsics;
+          const gtsam::Pose3 camera = anchor.compose(extrinsics, camera_H_anchor, camera_H_extrinsics);
+          gtsam::Matrix36 point_H_camera;
+          gtsam::Matrix33 point_H_point;
+          output = camera.transformTo(point, point_H_camera, point_H_point);
+          mapping.block<3, 6>(row, key_columns.at(anchor_key)) = point_H_camera * camera_H_anchor;
+          mapping.block<3, 3>(row, key_columns.at(point_key)) = point_H_point;
+          if (calibration.estimate_extrinsics)
+            mapping.block<3, 6>(row, key_columns.at(calibration.extrinsic_key)) = point_H_camera * camera_H_extrinsics;
+        }
+        row += 3;
+        break;
+      }
+      case FactorGraphResetVariableType::CAMERA_EXTRINSICS: {
+        const gtsam::Key key = camera_calibrations.at(variable.id).extrinsic_key;
+        const auto pose = values.at<gtsam::Pose3>(key);
+        const Eigen::Matrix3d imu_to_camera = pose.rotation().matrix().transpose();
+        const Eigen::Vector3d position_in_camera = -imu_to_camera * pose.translation();
+        output.resize(7);
+        output.head<4>() = ov_core::rot_2_quat(imu_to_camera);
+        output.tail<3>() = position_in_camera;
+        mapping.block<3, 3>(row, key_columns.at(key)).setIdentity();
+        mapping.block<3, 3>(row + 3, key_columns.at(key)) = ov_core::skew_x(position_in_camera);
+        mapping.block<3, 3>(row + 3, key_columns.at(key) + 3) = -Eigen::Matrix3d::Identity();
+        row += 6;
+        break;
+      }
+      case FactorGraphResetVariableType::IMU_ROTATION: {
+        const auto rotation = values.at<gtsam::Rot3>(imu_rotation_key()).inverse();
+        output = ov_core::rot_2_quat(rotation.matrix());
+        mapping.block<3, 3>(row, key_columns.at(imu_rotation_key())).setIdentity();
+        row += 3;
+        break;
+      }
+      default: {
+        gtsam::Key key;
+        if (variable.type == FactorGraphResetVariableType::IMU_DW)
+          key = dw_key();
+        else if (variable.type == FactorGraphResetVariableType::IMU_DA)
+          key = da_key();
+        else if (variable.type == FactorGraphResetVariableType::IMU_TG)
+          key = tg_key();
+        else if (variable.type == FactorGraphResetVariableType::CAMERA_TIME_OFFSET)
+          key = time_offset_key();
+        else
+          key = camera_calibrations.at(variable.id).intrinsic_key;
+        if (variable.type == FactorGraphResetVariableType::CAMERA_TIME_OFFSET) {
+          output = Eigen::VectorXd::Constant(1, values.at<double>(key));
+        } else {
+          output = values.at<gtsam::Vector>(key);
+        }
+        mapping.block(row, key_columns.at(key), output.rows(), output.rows()).setIdentity();
+        row += output.rows();
+        break;
+      }
+      }
+      snapshot.values.push_back(output);
+    }
+
+    gtsam::GaussianFactorGraph gaussian;
+    optimizer->addFactorsToGraph(&gaussian);
+    const auto marginal = gaussian.marginal(keys);
+    const gtsam::HessianFactor dense(*marginal);
+    const Eigen::MatrixXd information = dense.information();
+    const Eigen::LDLT<Eigen::MatrixXd> decomposition(0.5 * (information + information.transpose()));
+    if (decomposition.info() != Eigen::Success || (decomposition.vectorD().array() < -1e-10).any())
+      throw std::runtime_error("reset marginal is not positive semidefinite");
+    const Eigen::MatrixXd dense_covariance = decomposition.solve(Eigen::MatrixXd::Identity(graph_dimension, graph_dimension));
+    std::map<gtsam::Key, int> dense_columns;
+    int dense_column = 0;
+    for (gtsam::Key key : dense.keys()) {
+      const auto requested = std::find(keys.begin(), keys.end(), key);
+      if (requested == keys.end())
+        throw std::runtime_error("reset marginal returned an unexpected key");
+      dense_columns.emplace(key, dense_column);
+      dense_column += dimensions.at(std::distance(keys.begin(), requested));
+    }
+    Eigen::MatrixXd graph_covariance(graph_dimension, graph_dimension);
+    for (size_t first = 0; first < keys.size(); ++first)
+      for (size_t second = 0; second < keys.size(); ++second)
+        graph_covariance.block(key_columns.at(keys.at(first)), key_columns.at(keys.at(second)), dimensions.at(first),
+                               dimensions.at(second)) =
+            dense_covariance.block(dense_columns.at(keys.at(first)), dense_columns.at(keys.at(second)), dimensions.at(first),
+                                   dimensions.at(second));
+    snapshot.covariance = mapping * graph_covariance * mapping.transpose();
+    snapshot.covariance = 0.5 * (snapshot.covariance + snapshot.covariance.transpose());
+    if (!snapshot.covariance.allFinite())
+      throw std::runtime_error("reset covariance is non-finite");
+    snapshot.valid = true;
+  } catch (const std::exception &exception) {
+    snapshot.error = exception.what();
+    snapshot.values.clear();
+    snapshot.covariance.resize(0, 0);
+  }
+  return snapshot;
+}
+
 void FactorGraphState::finish_update() {
   std::lock_guard<std::mutex> lock(mutex);
   if (!initialized || failed)
     return;
-  commit(false);
+  commit();
 }
 
 void FactorGraphState::communicate(FactorGraphState &neighbor, double timestamp, double neighbor_timestamp, double range, double variance) {
@@ -666,11 +902,11 @@ void FactorGraphState::communicate(FactorGraphState &neighbor, double timestamp,
   pending_factors.emplace_shared<gtsam::RangeFactor<gtsam::Pose3, gtsam::Point3>>(frame.pose_key, position, range,
                                                                                   gtsam::noiseModel::Isotropic::Variance(1, variance));
 
-  // get_summary commits the range with forced relinearization before summarizing it.
+  // get_summary commits the range before summarizing it.
   neighbor.update_summary(get_summary(timestamp), agent_id);
   for (const auto &entry : cached_summaries)
     neighbor.update_summary(entry.second.summary, entry.first);
-  neighbor.commit(true);
+  neighbor.commit();
 }
 
 gtsam::Key FactorGraphState::declare_shared(double timestamp) {
@@ -722,7 +958,7 @@ void FactorGraphState::update_summary(const Summary &summary, size_t origin) {
 }
 
 FactorGraphState::Summary FactorGraphState::get_summary(double timestamp) {
-  commit(true);
+  commit();
   if (shared_keys.empty() || local_shared_keys.empty())
     throw std::logic_error("Cannot summarize a graph without locally relevant shared positions");
 

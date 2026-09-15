@@ -124,6 +124,10 @@ public:
    */
   static Eigen::MatrixXd get_full_covariance(std::shared_ptr<State> state);
 
+  /** Atomically replace every active value, FEJ value, and covariance block. */
+  static bool reset(std::shared_ptr<State> state, const std::vector<std::shared_ptr<ov_type::Type>> &variables,
+                    const std::vector<Eigen::VectorXd> &values, const Eigen::MatrixXd &covariance, std::string &error);
+
   /**
    * @brief Marginalizes a variable, properly modifying the ordering/covariances in the state
    *

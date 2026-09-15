@@ -55,8 +55,8 @@ using namespace ov_msckf;
 
 namespace {
 
-const std::array<const char *, 16> result_state_columns = {"q_x",  "q_y",  "q_z",  "q_w",  "p_x",  "p_y", "p_z", "v_x",
-                                                            "v_y",  "v_z",  "bg_x", "bg_y", "bg_z", "ba_x", "ba_y", "ba_z"};
+const std::array<const char *, 16> result_state_columns = {"q_x", "q_y", "q_z",  "q_w",  "p_x",  "p_y",  "p_z",  "v_x",
+                                                           "v_y", "v_z", "bg_x", "bg_y", "bg_z", "ba_x", "ba_y", "ba_z"};
 
 void write_state_header(std::ofstream &stream) {
   for (const char *column : result_state_columns)
@@ -115,11 +115,10 @@ void VioManager::record_groundtruth(double timestamp, const Eigen::Matrix<double
 }
 
 void VioManager::finish_factor_graph_update() {
-  if (factorGraphManager == nullptr)
-    return;
-
-  factorGraphManager->finish_camera_update();
-  if (!params.defer_factor_graph_results)
+  if (factorGraphManager != nullptr)
+    factorGraphManager->finish_camera_update();
+  estimator_result_cache_valid = false;
+  if (!params.defer_results)
     record_estimator_results();
 }
 
@@ -127,27 +126,88 @@ void VioManager::communicate_range(VioManager &neighbor, double timestamp, doubl
   if (!factorGraphManager || !neighbor.factorGraphManager)
     throw std::runtime_error("Ranging requires a factor graph on both vehicles");
   factorGraphManager->communicate(*neighbor.factorGraphManager, timestamp, neighbor_timestamp, range, variance);
+  estimator_result_cache_valid = false;
+  neighbor.estimator_result_cache_valid = false;
+  if (params.resets_openvins())
+    reset_from_factor_graph();
+  if (neighbor.params.resets_openvins())
+    neighbor.reset_from_factor_graph();
+}
+
+void VioManager::reset_from_factor_graph() {
+  std::string error;
+  if (!factorGraphManager->reset_openvins(state, error)) {
+    ++reset_skip_count;
+    PRINT_WARNING("[HYBRID]: vehicle %zu reset skipped: %s\n", params.factor_graph_agent_id, error.c_str());
+    return;
+  }
+  finish_openvins_reset();
+  ++reset_success_count;
+}
+
+void VioManager::finish_openvins_reset() {
+  const double time_offset = state->_calib_dt_CAMtoIMU->value()(0);
+  propagator->reset_time_offset(time_offset);
+  if (updaterZUPT)
+    updaterZUPT->reset_time_offset(time_offset);
+  active_feat_linsys_A.clear();
+  active_feat_linsys_b.clear();
+  active_feat_linsys_count.clear();
+  active_tracks_posinG.clear();
+  active_tracks_uvd.clear();
+  auto refresh = [&](const std::shared_ptr<ov_core::TrackBase> &tracker) {
+    if (!tracker)
+      return;
+    for (const auto &entry : tracker->get_feature_database()->get_internal_data()) {
+      for (const auto &camera : entry.second->uvs) {
+        auto &normalized = entry.second->uvs_norm[camera.first];
+        normalized.clear();
+        normalized.reserve(camera.second.size());
+        for (const auto &pixel : camera.second) {
+          const cv::Point2f point = state->_cam_intrinsics_cameras.at(camera.first)->undistort_cv(cv::Point2f(pixel(0), pixel(1)));
+          Eigen::VectorXf value(2);
+          value << point.x, point.y;
+          normalized.push_back(value);
+        }
+      }
+    }
+  };
+  refresh(trackFEATS);
+  refresh(trackARUCO);
+  estimator_result_cache_valid = false;
+}
+
+EstimatorResult VioManager::get_estimator_result() {
+  if (estimator_result_cache_valid && estimator_result_cache.timestamp == state->_timestamp)
+    return estimator_result_cache;
+  EstimatorResult result;
+  result.timestamp = state->_timestamp;
+  if (params.reports_factor_graph()) {
+    const FactorGraphResult graph = factorGraphManager->get_estimate(state->_timestamp);
+    result.valid = graph.valid;
+    result.state = graph.imu_state;
+    result.covariance = graph.covariance;
+  } else {
+    result.valid = true;
+    result.state = state->_imu->value();
+    result.covariance = StateHelper::get_marginal_covariance(
+        state, {state->_imu->q(), state->_imu->p(), state->_imu->v(), state->_imu->bg(), state->_imu->ba()});
+  }
+  estimator_result_cache = result;
+  estimator_result_cache_valid = true;
+  return result;
 }
 
 void VioManager::record_estimator_results() {
-  if (!factorGraphManager || !openvins_results.is_open())
+  if (!estimator_results.is_open())
     return;
-  const FactorGraphResult graph = factorGraphManager->get_estimate(state->_timestamp);
-
-  const Eigen::Matrix<double, 15, 15> openvins_covariance = StateHelper::get_marginal_covariance(
-      state, {state->_imu->q(), state->_imu->p(), state->_imu->v(), state->_imu->bg(), state->_imu->ba()});
-  write_state(openvins_results, state->_timestamp, state->_imu->value());
-  write_covariance(openvins_results, openvins_covariance);
-  openvins_results << "\n";
-
-  factor_graph_results << std::setprecision(17) << state->_timestamp << "," << graph.valid;
-  for (int index = 0; index < graph.imu_state.rows(); index++)
-    factor_graph_results << "," << graph.imu_state(index);
-  write_covariance(factor_graph_results, graph.covariance);
-  factor_graph_results << "," << graph.factor_count << "," << graph.value_count << "," << graph.update_seconds << "\n";
-
-  openvins_results.flush();
-  factor_graph_results.flush();
+  const EstimatorResult result = get_estimator_result();
+  estimator_results << std::setprecision(17) << result.timestamp << "," << result.valid;
+  for (int index = 0; index < result.state.rows(); ++index)
+    estimator_results << "," << result.state(index);
+  write_covariance(estimator_results, result.covariance);
+  estimator_results << "\n";
+  estimator_results.flush();
 }
 
 VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false), thread_init_success(false) {
@@ -164,6 +224,14 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   params.print_and_load_state();
   params.print_and_load_trackers();
 
+  if (params.resets_openvins() &&
+      ((params.state_options.max_slam_features > 0 && params.state_options.feat_rep_slam != ov_type::LandmarkRepresentation::GLOBAL_3D &&
+        params.state_options.feat_rep_slam != ov_type::LandmarkRepresentation::ANCHORED_3D) ||
+       (params.state_options.max_aruco_features > 0 && params.use_aruco &&
+        params.state_options.feat_rep_aruco != ov_type::LandmarkRepresentation::GLOBAL_3D &&
+        params.state_options.feat_rep_aruco != ov_type::LandmarkRepresentation::ANCHORED_3D)))
+    throw std::invalid_argument("hybrid mode requires GLOBAL_3D or ANCHORED_3D persistent landmarks");
+
   // This will globally set the thread count we will use
   // -1 will reset to the system default threading (usually the num of cores)
   cv::setNumThreads(params.num_opencv_threads);
@@ -173,25 +241,17 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   state = std::make_shared<State>(params.state_options);
 
   if (params.save_results) {
-    if (!params.use_factor_graph)
-      throw std::invalid_argument("save_results requires use_factor_graph");
     boost::filesystem::create_directories(params.results_path);
     const boost::filesystem::path results_directory(params.results_path);
-    openvins_results.open((results_directory / "openvins.csv").string());
-    factor_graph_results.open((results_directory / "factor_graph.csv").string());
+    estimator_results.open((results_directory / "estimate.csv").string());
     groundtruth_results.open((results_directory / "groundtruth.csv").string());
-    if (!openvins_results || !factor_graph_results || !groundtruth_results)
+    if (!estimator_results || !groundtruth_results)
       throw std::runtime_error("Unable to open result files in " + params.results_path);
 
-    openvins_results << "timestamp";
-    write_state_header(openvins_results);
-    write_covariance_header(openvins_results);
-    openvins_results << "\n";
-
-    factor_graph_results << "timestamp,valid";
-    write_state_header(factor_graph_results);
-    write_covariance_header(factor_graph_results);
-    factor_graph_results << ",factor_count,value_count,update_seconds\n";
+    estimator_results << "timestamp,valid";
+    write_state_header(estimator_results);
+    write_covariance_header(estimator_results);
+    estimator_results << "\n";
 
     groundtruth_results << "timestamp";
     write_state_header(groundtruth_results);
@@ -199,7 +259,7 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   }
 
   // Create the passive factor-graph estimator only when explicitly requested
-  if (params.use_factor_graph) {
+  if (params.runs_factor_graph()) {
     factorGraphManager = std::make_unique<FactorGraphManager>(params);
   }
 
@@ -375,8 +435,8 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
       assert(state->_timestamp == timestamp);
       if (factorGraphManager != nullptr) {
         factorGraphManager->add_zero_velocity_factor(timestamp);
-        finish_factor_graph_update();
       }
+      finish_factor_graph_update();
       propagator->clean_old_imu_measurements(timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       propagator->invalidate_cache();
@@ -452,8 +512,8 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
       assert(state->_timestamp == message.timestamp);
       if (factorGraphManager != nullptr) {
         factorGraphManager->add_zero_velocity_factor(message.timestamp);
-        finish_factor_graph_update();
       }
+      finish_factor_graph_update();
       propagator->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       propagator->invalidate_cache();
@@ -507,9 +567,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if ((int)state->_clones_IMU.size() < std::min(state->_options.max_clone_size, 5)) {
     PRINT_DEBUG("waiting for enough clone states (%d of %d)....\n", (int)state->_clones_IMU.size(),
                 std::min(state->_options.max_clone_size, 5));
-    if (factorGraphManager != nullptr) {
-      finish_factor_graph_update();
-    }
+    finish_factor_graph_update();
     return;
   }
 
@@ -517,9 +575,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if (state->_timestamp != message.timestamp) {
     PRINT_WARNING(RED "[PROP]: Propagator unable to propagate the state forward in time!\n" RESET);
     PRINT_WARNING(RED "[PROP]: It has been %.3f since last time we propagated\n" RESET, message.timestamp - state->_timestamp);
-    if (factorGraphManager != nullptr) {
-      finish_factor_graph_update();
-    }
+    finish_factor_graph_update();
     return;
   }
   has_moved_since_zupt = true;
@@ -793,8 +849,8 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   updaterGlobal->update(state);
   if (factorGraphManager != nullptr) {
     factorGraphManager->apply_pending_global_factors(message.timestamp);
-    finish_factor_graph_update();
   }
+  finish_factor_graph_update();
 
   //===================================================================================
   // Debug info, and stats tracking

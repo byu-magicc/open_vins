@@ -52,6 +52,7 @@ public:
 
   /** Return the estimate propagated to the requested timestamp. */
   FactorGraphResult get_estimate(double timestamp);
+  FactorGraphResetSnapshot get_reset_snapshot(const std::vector<FactorGraphResetVariable> &variables);
 
   void communicate(FactorGraphState &neighbor, double timestamp, double neighbor_timestamp, double range, double variance);
 
@@ -82,7 +83,7 @@ private:
 
   gtsam::Values current_values() const;
   Frame &ensure_frame(double timestamp);
-  void commit(bool force_relinearize);
+  void commit();
 
   size_t agent_id;
   uint64_t summary_version = 0;

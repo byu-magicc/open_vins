@@ -40,7 +40,7 @@ struct VioManagerOptions;
  * @brief Passive interface between VioManager decisions and the parallel factor-graph estimator.
  *
  * VioManager owns this object and determines what measurements are supplied and when. This
- * manager must never modify the OpenVINS state or return information that affects its decisions.
+ * manager normally leaves OpenVINS untouched, except for an explicit hybrid reset after ranging.
  * The implementation synchronizes access because initialization and sensor callbacks may arrive
  * from different threads.
  */
@@ -77,6 +77,9 @@ public:
 
   /** @brief Return the latest estimate, propagated to the requested timestamp. */
   FactorGraphResult get_estimate(double timestamp);
+
+  /** Replace the active OpenVINS posterior from the graph after ranging. */
+  bool reset_openvins(const std::shared_ptr<State> &openvins_state, std::string &error);
 
   /** Own a range measurement and exchange distributed summaries with a neighbor. */
   void communicate(FactorGraphManager &neighbor, double timestamp, double neighbor_timestamp, double range, double variance);

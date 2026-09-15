@@ -75,10 +75,10 @@ struct FactorGraphDistributedTest {
     a.update_summary(b_summary, 1);
     a.update_summary(newer_b, 1);
     check(a.cached_summaries.at(1).graph_factor == new_pending, "Stale or duplicate summary was accepted");
-    a.commit(true);
+    a.commit();
     a.update_summary(b.get_summary(0), 1);
     check(a.pending_remove_factor_indices.size() == 1, "Committed summary was not queued for removal");
-    a.commit(true);
+    a.commit();
     check(std::count(a.optimizer->getFactorsUnsafe().begin(), a.optimizer->getFactorsUnsafe().end(), new_pending) == 0,
           "Old committed summary survived replacement");
 
@@ -136,6 +136,17 @@ struct FactorGraphDistributedTest {
       check(summary.factor->information().allFinite(), "Nonfinite summary information");
       check(graph->get_estimate(0).valid, "Invalid distributed estimate");
     }
+    FactorGraphResetVariable imu_request;
+    imu_request.type = FactorGraphResetVariableType::IMU;
+    imu_request.timestamp = 0;
+    FactorGraphResetVariable clone_request;
+    clone_request.type = FactorGraphResetVariableType::CLONE;
+    clone_request.timestamp = 0;
+    const auto reset = a.get_reset_snapshot({imu_request, clone_request});
+    check(reset.valid && reset.values.size() == 2 && reset.covariance.rows() == 21, "Could not export reset posterior");
+    check((reset.values.at(0).head<7>() - reset.values.at(1)).norm() < 1e-12, "Current pose and matching clone disagree");
+    check((reset.covariance.block<6, 6>(0, 0) - reset.covariance.block<6, 6>(15, 15)).norm() < 1e-10,
+          "Duplicated pose covariance disagrees");
     a.communicate(b, 0, 0, 0, 1);
     bool rejected = false;
     try {
@@ -145,8 +156,7 @@ struct FactorGraphDistributedTest {
     }
     check(rejected, "Negative range was accepted");
 
-    // A small delta below the normal threshold must still be relinearized for a summary,
-    // even after its factors have already been committed.
+    // A summary must respect the configured iSAM2 relinearization policy.
     options.factor_graph_agent_id = 3;
     FactorGraphState relinearization_graph(options);
     FactorGraphInitialization initial;
@@ -159,13 +169,13 @@ struct FactorGraphDistributedTest {
     relinearization_graph.declare_shared(0);
     relinearization_graph.pending_factors.emplace_shared<gtsam::PriorFactor<gtsam::Pose3>>(
         pose, gtsam::Pose3(gtsam::Rot3(), gtsam::Point3(0.01, 0, 0)), gtsam::noiseModel::Isotropic::Sigma(6, 1));
-    relinearization_graph.commit(false);
+    relinearization_graph.commit();
     const double before = relinearization_graph.optimizer->getLinearizationPoint().at<gtsam::Pose3>(pose).x();
     const double estimate = relinearization_graph.optimizer->calculateEstimate<gtsam::Pose3>(pose).x();
     check(std::abs(estimate - before) > 1e-4, "Forced-relinearization test did not produce a delta");
     relinearization_graph.get_summary(0);
     const double after = relinearization_graph.optimizer->getLinearizationPoint().at<gtsam::Pose3>(pose).x();
-    check(std::abs(after - estimate) < 1e-8, "Summary did not force relinearization with empty pending queues");
+    check(std::abs(after - before) < 1e-12, "Summary unexpectedly forced relinearization");
   }
 };
 

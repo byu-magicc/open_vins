@@ -54,6 +54,13 @@ class Propagator;
 class UpdaterZeroVelocity {
 
 public:
+  void reset_time_offset(double time_offset) {
+    last_prop_time_offset = time_offset;
+    have_last_prop_time_offset = true;
+    last_zupt_state_timestamp = 0.0;
+    last_zupt_count = 0;
+  }
+
   /**
    * @brief Default constructor for our zero velocity detector and updater.
    * @param options Updater options (chi2 multiplier)

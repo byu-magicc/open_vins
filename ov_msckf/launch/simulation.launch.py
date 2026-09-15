@@ -75,9 +75,9 @@ launch_args = [
         description="if we have more than 1 camera, if we should try to track stereo constraints between pairs",
     ),
     DeclareLaunchArgument(
-        name="use_factor_graph",
-        default_value="false",
-        description="enable the passive factor-graph estimator interface",
+        name="filter_type",
+        default_value="openvins",
+        description="estimator to expose: openvins, factor_graph, or hybrid",
     ),
     DeclareLaunchArgument(
         name="relinearize_skip",
@@ -311,7 +311,7 @@ def launch_setup(context):
             {"max_clones": LaunchConfiguration("num_clones")},
             {"max_slam": LaunchConfiguration("num_slam")},
             {"use_stereo": LaunchConfiguration("use_stereo")},
-            {"use_factor_graph": LaunchConfiguration("use_factor_graph")},
+            {"filter_type": LaunchConfiguration("filter_type")},
             {"relinearize_skip": LaunchConfiguration("relinearize_skip")},
             {"relinearize_threshold": LaunchConfiguration("relinearize_threshold")},
             {"use_qr": LaunchConfiguration("use_qr")},

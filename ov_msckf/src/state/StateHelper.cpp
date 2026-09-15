@@ -268,6 +268,46 @@ Eigen::MatrixXd StateHelper::get_full_covariance(std::shared_ptr<State> state) {
   return full_cov;
 }
 
+bool StateHelper::reset(std::shared_ptr<State> state, const std::vector<std::shared_ptr<ov_type::Type>> &variables,
+                        const std::vector<Eigen::VectorXd> &values, const Eigen::MatrixXd &covariance, std::string &error) {
+  int dimension = 0;
+  for (const auto &variable : variables)
+    dimension += variable->size();
+  if (variables.size() != values.size() || covariance.rows() != dimension || covariance.cols() != dimension || !covariance.allFinite()) {
+    error = "reset state dimensions or covariance are invalid";
+    return false;
+  }
+  const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(0.5 * (covariance + covariance.transpose()));
+  if (eigensolver.info() != Eigen::Success ||
+      eigensolver.eigenvalues().minCoeff() < -1e-9 * std::max(1.0, covariance.diagonal().maxCoeff())) {
+    error = "reset covariance is not positive semidefinite";
+    return false;
+  }
+  for (size_t index = 0; index < variables.size(); ++index) {
+    if (!values.at(index).allFinite() || values.at(index).rows() != variables.at(index)->value().rows()) {
+      error = "reset contains an invalid variable value";
+      return false;
+    }
+  }
+
+  std::lock_guard<std::mutex> lock(state->_mutex_state);
+  for (size_t index = 0; index < variables.size(); ++index) {
+    variables.at(index)->set_value(values.at(index));
+    variables.at(index)->set_fej(values.at(index));
+  }
+  int row = 0;
+  for (const auto &row_variable : variables) {
+    int column = 0;
+    for (const auto &column_variable : variables) {
+      state->_Cov.block(row_variable->id(), column_variable->id(), row_variable->size(), column_variable->size()) =
+          covariance.block(row, column, row_variable->size(), column_variable->size());
+      column += column_variable->size();
+    }
+    row += row_variable->size();
+  }
+  return true;
+}
+
 void StateHelper::marginalize(std::shared_ptr<State> state, std::shared_ptr<Type> marg) {
 
   // Check if the current state has the element we want to marginalize
