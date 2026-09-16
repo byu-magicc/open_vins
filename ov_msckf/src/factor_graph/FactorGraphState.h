@@ -83,7 +83,7 @@ private:
 
   gtsam::Values current_values() const;
   Frame &ensure_frame(double timestamp);
-  void commit();
+  void commit(bool full_update = false);
 
   size_t agent_id;
   uint64_t summary_version = 0;

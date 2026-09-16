@@ -21,6 +21,7 @@
 #include <gtsam/linear/JacobianFactor.h>
 #include <gtsam/navigation/GPSFactor.h>
 #include <gtsam/nonlinear/ISAM2UpdateParams.h>
+#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/LinearContainerFactor.h>
 #include <gtsam/sam/RangeFactor.h>
 
@@ -476,18 +477,38 @@ void FactorGraphState::add_visual_factors(const FactorGraphVisualUpdate &update)
   }
 }
 
-void FactorGraphState::commit() {
+void FactorGraphState::commit(bool full_update) {
   if (failed)
     throw std::runtime_error("Factor graph is unavailable after an earlier solver failure");
-  if (pending_factors.empty() && pending_values.empty() && pending_remove_factor_indices.empty())
+  const bool has_pending_update = !pending_factors.empty() || !pending_values.empty() || !pending_remove_factor_indices.empty();
+  if (!full_update && !has_pending_update)
     return;
   const auto start = std::chrono::steady_clock::now();
   try {
-    gtsam::ISAM2UpdateParams update_params;
-    update_params.removeFactorIndices = pending_remove_factor_indices;
-    optimizer->update(pending_factors, pending_values, update_params);
+    if (has_pending_update) {
+      gtsam::ISAM2UpdateParams update_params;
+      update_params.removeFactorIndices = pending_remove_factor_indices;
+      optimizer->update(pending_factors, pending_values, update_params);
+    }
+    if (full_update) {
+      gtsam::NonlinearFactorGraph graph;
+      for (const auto &factor : optimizer->getFactorsUnsafe())
+        if (factor)
+          graph.push_back(factor);
+
+      gtsam::LevenbergMarquardtParams lm_parameters = gtsam::LevenbergMarquardtParams::CeresDefaults();
+      const gtsam::ISAM2Params isam_parameters = optimizer->params();
+      lm_parameters.linearSolverType = isam_parameters.factorization == gtsam::ISAM2Params::QR
+                                           ? gtsam::NonlinearOptimizerParams::MULTIFRONTAL_QR
+                                           : gtsam::NonlinearOptimizerParams::MULTIFRONTAL_CHOLESKY;
+      const gtsam::Values optimized = gtsam::LevenbergMarquardtOptimizer(graph, optimizer->calculateEstimate(), lm_parameters).optimize();
+
+      auto rebuilt_optimizer = std::make_unique<gtsam::ISAM2>(isam_parameters);
+      rebuilt_optimizer->update(graph, optimized);
+      optimizer = std::move(rebuilt_optimizer);
+    }
   } catch (const std::exception &exception) {
-    PRINT_ERROR("[FACTOR-GRAPH]: disabling parallel estimator after iSAM2 failure: %s\n", exception.what());
+    PRINT_ERROR("[FACTOR-GRAPH]: disabling parallel estimator after graph optimization failure: %s\n", exception.what());
     failed = true;
     pending_factors.resize(0);
     pending_values.clear();
@@ -906,7 +927,7 @@ void FactorGraphState::communicate(FactorGraphState &neighbor, double timestamp,
   neighbor.update_summary(get_summary(timestamp), agent_id);
   for (const auto &entry : cached_summaries)
     neighbor.update_summary(entry.second.summary, entry.first);
-  neighbor.commit();
+  neighbor.commit(true);
 }
 
 gtsam::Key FactorGraphState::declare_shared(double timestamp) {
@@ -958,7 +979,7 @@ void FactorGraphState::update_summary(const Summary &summary, size_t origin) {
 }
 
 FactorGraphState::Summary FactorGraphState::get_summary(double timestamp) {
-  commit();
+  commit(true);
   if (shared_keys.empty() || local_shared_keys.empty())
     throw std::logic_error("Cannot summarize a graph without locally relevant shared positions");
 

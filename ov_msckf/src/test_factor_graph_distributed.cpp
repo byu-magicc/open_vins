@@ -27,6 +27,21 @@
 
 namespace ov_msckf {
 
+class SquaredErrorFactor : public gtsam::NoiseModelFactor1<double> {
+public:
+  SquaredErrorFactor(gtsam::Key key, double measurement)
+      : gtsam::NoiseModelFactor1<double>(gtsam::noiseModel::Unit::Create(1), key), measurement(measurement) {}
+
+  gtsam::Vector evaluateError(const double &value, boost::optional<gtsam::Matrix &> jacobian = boost::none) const override {
+    if (jacobian)
+      *jacobian = gtsam::Matrix::Constant(1, 1, 2 * value);
+    return gtsam::Vector1(value * value - measurement);
+  }
+
+private:
+  double measurement;
+};
+
 struct FactorGraphDistributedTest {
   static void check(bool condition, const char *message) {
     if (!condition)
@@ -156,26 +171,38 @@ struct FactorGraphDistributedTest {
     }
     check(rejected, "Negative range was accepted");
 
-    // A summary must respect the configured iSAM2 relinearization policy.
+    // A light update takes one incremental step, while a full update converges
+    // the complete nonlinear graph and leaves iSAM2 ready for future updates.
     options.factor_graph_agent_id = 3;
-    FactorGraphState relinearization_graph(options);
+    FactorGraphState full_update_graph(options);
     FactorGraphInitialization initial;
     initial.timestamp = 0;
     initial.imu_state(3) = 1;
     initial.variable_names = {"imu"};
     initial.variable_dimensions = {15};
     initial.covariance = Eigen::Matrix<double, 15, 15>::Identity();
-    relinearization_graph.initialize(initial);
-    relinearization_graph.declare_shared(0);
-    relinearization_graph.pending_factors.emplace_shared<gtsam::PriorFactor<gtsam::Pose3>>(
-        pose, gtsam::Pose3(gtsam::Rot3(), gtsam::Point3(0.01, 0, 0)), gtsam::noiseModel::Isotropic::Sigma(6, 1));
-    relinearization_graph.commit();
-    const double before = relinearization_graph.optimizer->getLinearizationPoint().at<gtsam::Pose3>(pose).x();
-    const double estimate = relinearization_graph.optimizer->calculateEstimate<gtsam::Pose3>(pose).x();
-    check(std::abs(estimate - before) > 1e-4, "Forced-relinearization test did not produce a delta");
-    relinearization_graph.get_summary(0);
-    const double after = relinearization_graph.optimizer->getLinearizationPoint().at<gtsam::Pose3>(pose).x();
-    check(std::abs(after - before) < 1e-12, "Summary unexpectedly forced relinearization");
+    full_update_graph.initialize(initial);
+    const gtsam::Key nonlinear_key = gtsam::Symbol('n', 0);
+    full_update_graph.pending_values.insert(nonlinear_key, 10.0);
+    full_update_graph.pending_factors.emplace_shared<SquaredErrorFactor>(nonlinear_key, 1.0);
+    full_update_graph.commit();
+    const gtsam::Values light_values = full_update_graph.optimizer->calculateEstimate();
+    const double light_value = light_values.at<double>(nonlinear_key);
+    const double light_error = full_update_graph.optimizer->getFactorsUnsafe().error(light_values);
+    check(light_value > 2, "Light iSAM2 update unexpectedly performed a batch solve");
+
+    full_update_graph.commit(true);
+    const gtsam::Values full_values = full_update_graph.optimizer->calculateEstimate();
+    const double full_value = full_values.at<double>(nonlinear_key);
+    const double full_error = full_update_graph.optimizer->getFactorsUnsafe().error(full_values);
+    check(std::abs(full_value - 1) < 1e-5, "Full update did not converge to the LM solution");
+    check(full_error < 1e-6 * light_error, "Full update did not substantially reduce nonlinear error");
+
+    full_update_graph.pending_factors.emplace_shared<gtsam::PriorFactor<double>>(nonlinear_key, 1.1,
+                                                                                 gtsam::noiseModel::Isotropic::Sigma(1, 0.1));
+    full_update_graph.commit();
+    check(full_update_graph.optimizer->calculateEstimate<double>(nonlinear_key) > full_value,
+          "Rebuilt iSAM2 did not accept a subsequent incremental update");
   }
 };
 
