@@ -26,7 +26,7 @@ jobs:
           podman run --rm \
             --volume "${PWD}/runs:/open_vins_ws/runs" \
             open-vins:ci \
-            ./src/open_vins/run_multi_agent_experiment.sh
+            ./src/open_vins/run_multi_agent_experiments.sh
 
       - name: Verify results and plots
         run: |
