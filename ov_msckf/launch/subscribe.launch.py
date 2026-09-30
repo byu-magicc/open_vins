@@ -1,11 +1,11 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, TextSubstitution
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory, get_package_prefix
+from launch_ros.parameter_descriptions import ParameterValue
+from ament_index_python.packages import get_package_share_directory
 import os
-import sys
 
 launch_args = [
     DeclareLaunchArgument(name="namespace", default_value="ov_msckf", description="namespace"),
@@ -44,7 +44,11 @@ launch_args = [
         name="save_total_state",
         default_value="false",
         description="record the total state with calibration and features to a txt file",
-    )
+    ),
+    DeclareLaunchArgument(name="save_results", default_value="false", description="save selected estimator state and covariance CSV"),
+    DeclareLaunchArgument(name="results_path", default_value="results", description="result directory, with namespace appended"),
+    DeclareLaunchArgument(name="filter_type", default_value="openvins", choices=["openvins", "factor_graph", "hybrid"]),
+    DeclareLaunchArgument(name="use_sim_time", default_value="false"),
 ]
 
 def launch_setup(context):
@@ -85,6 +89,10 @@ def launch_setup(context):
             {"use_stereo": LaunchConfiguration("use_stereo")},
             {"max_cameras": LaunchConfiguration("max_cameras")},
             {"save_total_state": LaunchConfiguration("save_total_state")},
+            {"save_results": ParameterValue(LaunchConfiguration("save_results"), value_type=bool)},
+            {"results_path": ParameterValue(LaunchConfiguration("results_path"), value_type=str)},
+            {"filter_type": ParameterValue(LaunchConfiguration("filter_type"), value_type=str)},
+            {"use_sim_time": ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool)},
             {"config_path": config_path},
         ],
     )

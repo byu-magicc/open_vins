@@ -107,8 +107,16 @@ FactorGraphVisualUpdate create_factor_graph_visual_update(FactorGraphVisualUpdat
 VioManager::~VioManager() = default;
 
 void VioManager::record_groundtruth(double timestamp, const Eigen::Matrix<double, 16, 1> &groundtruth) {
-  if (!groundtruth_results.is_open())
+  if (!params.save_results)
     return;
+  if (!groundtruth_results.is_open()) {
+    groundtruth_results.open((boost::filesystem::path(params.results_path) / "groundtruth.csv").string());
+    if (!groundtruth_results)
+      throw std::runtime_error("Unable to open ground truth results in " + params.results_path);
+    groundtruth_results << "timestamp";
+    write_state_header(groundtruth_results);
+    groundtruth_results << "\n";
+  }
   write_state(groundtruth_results, timestamp, groundtruth);
   groundtruth_results << "\n";
   groundtruth_results.flush();
@@ -243,19 +251,16 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   if (params.save_results) {
     boost::filesystem::create_directories(params.results_path);
     const boost::filesystem::path results_directory(params.results_path);
+    // Do not pair a new estimate with stale truth when reusing an output directory.
+    boost::filesystem::remove(results_directory / "groundtruth.csv");
     estimator_results.open((results_directory / "estimate.csv").string());
-    groundtruth_results.open((results_directory / "groundtruth.csv").string());
-    if (!estimator_results || !groundtruth_results)
+    if (!estimator_results)
       throw std::runtime_error("Unable to open result files in " + params.results_path);
 
     estimator_results << "timestamp,valid";
     write_state_header(estimator_results);
     write_covariance_header(estimator_results);
     estimator_results << "\n";
-
-    groundtruth_results << "timestamp";
-    write_state_header(groundtruth_results);
-    groundtruth_results << "\n";
   }
 
   // Create the passive factor-graph estimator only when explicitly requested

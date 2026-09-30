@@ -45,7 +45,6 @@ set -u
 cd "${workspace_directory}"
 colcon build \
   --symlink-install \
-  --cmake-clean-cache \
   --cmake-args \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -DCMAKE_BUILD_TYPE=Release

@@ -7,6 +7,8 @@ Usage:
 The results directory may either be one agent directory, or a directory whose
 immediate children are agent directories. Each agent directory must contain
 ``estimate.csv`` and ``groundtruth.csv`` as written with ``save_results:=true``.
+With ``--truth-bag BAG_DIRECTORY``, one agent is compared against the bagged
+HoloOcean ``/sim/truth_state`` instead, with initial position/yaw alignment.
 If present, the fleet-level ``ranges.csv`` supplies range-event annotations.
 The script writes the same three SVG plots and NPZ data archive as the former
 ROS plotter into the output directory.
@@ -23,6 +25,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 
+from holoocean_truth import load_bag_reference
+
 
 def load_csv(path, required_columns):
     if not path.is_file():
@@ -31,8 +35,12 @@ def load_csv(path, required_columns):
     missing = sorted(set(required_columns) - set(data.dtype.names or ()))
     if missing:
         raise ValueError(f"{path} is missing columns: {', '.join(missing)}")
+    if 'valid' in (data.dtype.names or ()):
+        data = data[data['valid'] == 1]
     if data.size == 0:
-        raise ValueError(f"{path} contains no result rows")
+        raise ValueError(f"{path} contains no valid result rows")
+    if not np.all(np.isfinite(np.column_stack([data[column] for column in required_columns]))):
+        raise ValueError(f'{path} contains non-finite state or covariance values')
     timestamps = np.asarray(data['timestamp'], dtype=float)
     if not np.all(np.isfinite(timestamps)) or np.unique(timestamps).size != timestamps.size:
         raise ValueError(f"{path} has invalid or duplicate timestamps")
@@ -40,44 +48,62 @@ def load_csv(path, required_columns):
 
 
 class DataPlotter:
-    def __init__(self, results_directory, output_directory):
+    def __init__(self, results_directory, output_directory, truth_bag=None):
         self.output_directory = output_directory
-        if (results_directory / 'estimate.csv').is_file() and (results_directory / 'groundtruth.csv').is_file():
+        if truth_bag is None:
+            enu_to_ned = R.from_matrix([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
+            frd_to_flu = R.from_euler('x', np.pi)
+        if (results_directory / 'estimate.csv').is_file() and (truth_bag is not None or (results_directory / 'groundtruth.csv').is_file()):
             agent_directories = [results_directory]
         else:
             agent_directories = sorted(
                 directory for directory in results_directory.iterdir()
                 if directory.is_dir()
                 and (directory / 'estimate.csv').is_file()
-                and (directory / 'groundtruth.csv').is_file()
+                and (truth_bag is not None or (directory / 'groundtruth.csv').is_file())
             )
         if not agent_directories:
             raise ValueError(f"No agent results found in {results_directory}")
 
+        if truth_bag is not None and len(agent_directories) != 1:
+            raise ValueError('Bag plotting requires exactly one agent result directory')
+
         state_columns = (
-            'timestamp', 'q_x', 'q_y', 'q_z', 'q_w', 'p_x', 'p_y', 'p_z'
+            'timestamp', 'q_x', 'q_y', 'q_z', 'q_w', 'p_x', 'p_y', 'p_z', 'v_x', 'v_y', 'v_z'
         )
-        estimator_columns = state_columns + tuple(f'cov_{index}_{index}' for index in range(6))
+        estimator_columns = state_columns + tuple(f'cov_{index}_{index}' for index in range(9))
 
         self.time_data = {}
         self.global_truth_data = {}
         self.global_estimate_data = {}
         self.global_position_std = {}
-        self.global_orientation_std = {}
-        for directory in agent_directories:
-            truth = load_csv(directory / 'groundtruth.csv', state_columns)
-            estimate = load_csv(directory / 'estimate.csv', estimator_columns)
-            timestamps = np.intersect1d(truth['timestamp'], estimate['timestamp'])
-            if timestamps.size < 2:
-                raise ValueError(f"Fewer than two timestamps match in {directory}")
+        if truth_bag is not None:
+            estimator_columns += tuple(
+                f'cov_{row}_{column}' for start in (3, 6)
+                for row in range(start, start + 3) for column in range(start, start + 3) if row != column
+            )
 
-            dropped = truth.size + estimate.size - 2 * timestamps.size
-            truth_indices = {timestamp: index for index, timestamp in enumerate(truth['timestamp'])}
-            estimate_indices = {timestamp: index for index, timestamp in enumerate(estimate['timestamp'])}
-            truth = truth[[truth_indices[timestamp] for timestamp in timestamps]]
-            estimate = estimate[[estimate_indices[timestamp] for timestamp in timestamps]]
-            if dropped:
-                print(f"Dropped {dropped} unmatched rows in {directory}")
+        self.global_orientation_std = {}
+        self.global_truth_velocity = {}
+        self.global_estimate_velocity = {}
+        self.global_velocity_std = {}
+        for directory in agent_directories:
+            estimate = load_csv(directory / 'estimate.csv', estimator_columns)
+            if truth_bag is not None:
+                truth, estimate = load_bag_reference(truth_bag, estimate)
+                timestamps = estimate['timestamp']
+            else:
+                truth = load_csv(directory / 'groundtruth.csv', state_columns)
+                timestamps, truth_indices, estimate_indices = np.intersect1d(
+                    truth['timestamp'], estimate['timestamp'], return_indices=True,
+                )
+                if timestamps.size < 2:
+                    raise ValueError(f"Fewer than two timestamps match in {directory}")
+                dropped = truth.size + estimate.size - 2 * timestamps.size
+                truth = truth[truth_indices]
+                estimate = estimate[estimate_indices]
+                if dropped:
+                    print(f"Dropped {dropped} unmatched rows in {directory}")
 
             key = directory.name
             self.time_data[key] = timestamps
@@ -89,12 +115,20 @@ class DataPlotter:
                 estimate['p_x'], estimate['p_y'], estimate['p_z'],
                 estimate['q_x'], estimate['q_y'], estimate['q_z'], estimate['q_w'],
             ])
-            self.global_position_std[key] = np.sqrt(np.column_stack([
-                estimate['cov_3_3'], estimate['cov_4_4'], estimate['cov_5_5'],
-            ]))
-            self.global_orientation_std[key] = np.sqrt(np.column_stack([
-                estimate['cov_0_0'], estimate['cov_1_1'], estimate['cov_2_2'],
-            ]))
+            self.global_truth_velocity[key] = np.column_stack([truth[f'v_{axis}'] for axis in ('x', 'y', 'z')])
+            self.global_estimate_velocity[key] = np.column_stack([estimate[f'v_{axis}'] for axis in ('x', 'y', 'z')])
+            std = np.sqrt(np.maximum(0, np.column_stack([estimate[f'cov_{index}_{index}'] for index in range(9)])))
+            if truth_bag is None:
+                # Simulation CSVs use a Z-up world and IMU body; plot in NED/FRD.
+                for state in (self.global_truth_data[key], self.global_estimate_data[key]):
+                    state[:, :3] = enu_to_ned.apply(state[:, :3])
+                    state[:, 3:] = (enu_to_ned * R.from_quat(state[:, 3:]) * frd_to_flu).as_quat()
+                self.global_truth_velocity[key] = enu_to_ned.apply(self.global_truth_velocity[key])
+                self.global_estimate_velocity[key] = enu_to_ned.apply(self.global_estimate_velocity[key])
+                std = std[:, [0, 1, 2, 4, 3, 5, 7, 6, 8]]
+            self.global_orientation_std[key] = std[:, :3]
+            self.global_position_std[key] = std[:, 3:6]
+            self.global_velocity_std[key] = std[:, 6:9]
 
         self.range_measurements = []
         ranges_path = results_directory / 'ranges.csv'
@@ -191,6 +225,9 @@ class DataPlotter:
             data[f'{key}_global_position_std'] = global_position_std[key]
             data[f'{key}_global_estimate_orientation'] = global_estimate_orientation[key]
             data[f'{key}_global_orientation_std'] = global_orientation_std[key]
+            data[f'{key}_global_truth_velocity'] = self.global_truth_velocity[key]
+            data[f'{key}_global_estimate_velocity'] = self.global_estimate_velocity[key]
+            data[f'{key}_global_velocity_std'] = self.global_velocity_std[key]
         np.savez(data_filename, **data)
 
 
@@ -200,8 +237,8 @@ class DataPlotter:
         global_orientation_error = {}
         for key in self.global_truth_data.keys():
             # Convert quaternions to euler angles
-            global_truth_orientation[key] = np.array([R.from_quat(q).as_euler('xyz', degrees=False) for q in global_truth_orientation[key]])
-            global_estimate_orientation[key] = np.array([R.from_quat(q).as_euler('xyz', degrees=False) for q in global_estimate_orientation[key]])
+            global_truth_orientation[key] = R.from_quat(global_truth_orientation[key]).as_euler('xyz')
+            global_estimate_orientation[key] = R.from_quat(global_estimate_orientation[key]).as_euler('xyz')
 
             # Calculate errors between truth and estimates
             global_position_error[key] = global_truth_position[key] - global_estimate_position[key]
@@ -217,21 +254,21 @@ class DataPlotter:
         # Global xy position data
         for key in self.global_truth_data.keys():
             if key == next(iter(self.global_truth_data)):
-                axs[0].plot(global_truth_position[key][:, 0], global_truth_position[key][:, 1], color='blue', label='Truth')
-                axs[0].plot(global_estimate_position[key][:, 0], global_estimate_position[key][:, 1], color='red', label='Estimate')
+                axs[0].plot(global_truth_position[key][:, 1], global_truth_position[key][:, 0], color='blue', label='Truth')
+                axs[0].plot(global_estimate_position[key][:, 1], global_estimate_position[key][:, 0], color='red', label='Estimate')
             else:
-                axs[0].plot(global_truth_position[key][:, 0], global_truth_position[key][:, 1], color='blue')
-                axs[0].plot(global_estimate_position[key][:, 0], global_estimate_position[key][:, 1], color='red')
+                axs[0].plot(global_truth_position[key][:, 1], global_truth_position[key][:, 0], color='blue')
+                axs[0].plot(global_estimate_position[key][:, 1], global_estimate_position[key][:, 0], color='red')
 
         for segment_index, (owner_position, neighbor_position) in enumerate(range_segments):
             label = 'Range measurement' if segment_index == 0 else None
             axs[0].plot(
-                [owner_position[0], neighbor_position[0]],
                 [owner_position[1], neighbor_position[1]],
+                [owner_position[0], neighbor_position[0]],
                 color='grey', linestyle='--', linewidth=0.8, alpha=0.7, label=label,
             )
-        axs[0].set_xlabel('X Position (m)')
-        axs[0].set_ylabel('Y Position (m)')
+        axs[0].set_xlabel('East Position (m)')
+        axs[0].set_ylabel('North Position (m)')
         axs[0].set_title('XY Position of Agents (Global Estimate)')
         axs[0].legend()
         axs[0].axis('equal')
@@ -250,130 +287,55 @@ class DataPlotter:
 
         plt.tight_layout()
         plt.savefig(global_xy_position_and_error_filename)
+        plt.close(fig)
 
 
-        ### Global Position Plots ###
+        ### Individual State and Error Plots ###
 
-        fig, axs = plt.subplots(6, len(global_truth_position.keys()), figsize=(16, 12))
-
-        if len(global_truth_position.keys()) == 1:
-            axs = np.expand_dims(axs, axis=1)
-
-        column_idx = 0
-        for key in self.global_truth_data.keys():
-
-            # X Position
-            axs[0, column_idx].plot(time[key], global_truth_position[key][:, 0], color='blue', label='Truth')
-            axs[0, column_idx].plot(time[key], global_estimate_position[key][:, 0], color='red', label='Estimate')
-            axs[0, column_idx].set_title(key)
-
-            # Y Position
-            axs[1, column_idx].plot(time[key], global_truth_position[key][:, 1], color='blue')
-            axs[1, column_idx].plot(time[key], global_estimate_position[key][:, 1], color='red')
-
-            # Z Position
-            axs[2, column_idx].plot(time[key], global_truth_position[key][:, 2], color='blue')
-            axs[2, column_idx].plot(time[key], global_estimate_position[key][:, 2], color='red')
-
-            # Roll
-            axs[3, column_idx].plot(time[key], global_truth_orientation[key][:, 0], color='blue')
-            axs[3, column_idx].plot(time[key], global_estimate_orientation[key][:, 0], color='red')
-
-            # Pitch
-            axs[4, column_idx].plot(time[key], global_truth_orientation[key][:, 1], color='blue')
-            axs[4, column_idx].plot(time[key], global_estimate_orientation[key][:, 1], color='red')
-
-            # Yaw
-            axs[5, column_idx].plot(time[key], global_truth_orientation[key][:, 2], color='blue')
-            axs[5, column_idx].plot(time[key], global_estimate_orientation[key][:, 2], color='red')
-            axs[5, column_idx].set_xlabel('Time (s)')
-
-            for row in range(6):
-                for event_index, range_time in enumerate(range_times[key]):
-                    label = 'Range measurement' if row == 0 and event_index == 0 else None
-                    axs[row, column_idx].axvline(
-                        range_time, color='grey', linestyle='--', linewidth=0.8, alpha=0.7, label=label,
-                    )
-
-            # Add ylabels and legend
-            if column_idx == 0:
-                axs[0, column_idx].set_ylabel('East (m)')
-                axs[1, column_idx].set_ylabel('North (m)')
-                axs[2, column_idx].set_ylabel('Up (m)')
-                axs[3, column_idx].set_ylabel('Roll (rad)')
-                axs[4, column_idx].set_ylabel('Pitch (rad)')
-                axs[5, column_idx].set_ylabel('Yaw (rad)')
-                axs[0, column_idx].legend()
-
-            column_idx += 1
-
-        plt.tight_layout()
-        plt.savefig(global_position_filename)
-
-
-        ### Global Error Plots ###
-
-        fig, axs = plt.subplots(6, len(global_truth_position.keys()), figsize=(16, 12))
-
-        if len(global_truth_position.keys()) == 1:
-            axs = np.expand_dims(axs, axis=1)
-
-        column_idx = 0
-        for key in self.global_truth_data.keys():
-
-            # X Position
-            axs[0, column_idx].plot(time[key], global_position_error[key][:, 0], color='red', label='Error')
-            axs[0, column_idx].plot(time[key], global_position_std[key][:, 0]*2, color='blue', label='2 Sigma')
-            axs[0, column_idx].plot(time[key], -global_position_std[key][:, 0]*2, color='blue')
-            axs[0, column_idx].set_title(key)
-
-            # Y Position
-            axs[1, column_idx].plot(time[key], global_position_error[key][:, 1], color='red')
-            axs[1, column_idx].plot(time[key], global_position_std[key][:, 1]*2, color='blue')
-            axs[1, column_idx].plot(time[key], -global_position_std[key][:, 1]*2, color='blue')
-
-            # Z Position
-            axs[2, column_idx].plot(time[key], global_position_error[key][:, 2], color='red')
-            axs[2, column_idx].plot(time[key], global_position_std[key][:, 2]*2, color='blue')
-            axs[2, column_idx].plot(time[key], -global_position_std[key][:, 2]*2, color='blue')
-
-            # Pitch
-            axs[3, column_idx].plot(time[key], global_orientation_error[key][:, 0], color='red')
-            axs[3, column_idx].plot(time[key], global_orientation_std[key][:, 0]*2, color='blue')
-            axs[3, column_idx].plot(time[key], -global_orientation_std[key][:, 0]*2, color='blue')
-
-            # Roll
-            axs[4, column_idx].plot(time[key], global_orientation_error[key][:, 1], color='red')
-            axs[4, column_idx].plot(time[key], global_orientation_std[key][:, 1]*2, color='blue')
-            axs[4, column_idx].plot(time[key], -global_orientation_std[key][:, 1]*2, color='blue')
-
-            # Yaw
-            axs[5, column_idx].plot(time[key], global_orientation_error[key][:, 2], color='red')
-            axs[5, column_idx].plot(time[key], global_orientation_std[key][:, 2]*2, color='blue')
-            axs[5, column_idx].plot(time[key], -global_orientation_std[key][:, 2]*2, color='blue')
-            axs[5, column_idx].set_xlabel('Time (s)')
-
-            for row in range(6):
-                for event_index, range_time in enumerate(range_times[key]):
-                    label = 'Range measurement' if row == 0 and event_index == 0 else None
-                    axs[row, column_idx].axvline(
-                        range_time, color='grey', linestyle='--', linewidth=0.8, alpha=0.7, label=label,
-                    )
-
-            # Add ylabels to leftmost plots
-            if column_idx == 0:
-                axs[0, column_idx].set_ylabel('East Error (m)')
-                axs[1, column_idx].set_ylabel('North Error (m)')
-                axs[2, column_idx].set_ylabel('Up Error (m)')
-                axs[3, column_idx].set_ylabel('Roll Error (rad)')
-                axs[4, column_idx].set_ylabel('Pitch Error (rad)')
-                axs[5, column_idx].set_ylabel('Yaw Error (rad)')
-                axs[0, column_idx].legend()
-
-            column_idx += 1
-
-        plt.tight_layout()
-        plt.savefig(global_error_filename)
+        axes = ('North', 'East', 'Down')
+        labels = tuple(f'{axis} (m)' for axis in axes) + ('Roll (rad)', 'Pitch (rad)', 'Yaw (rad)') + tuple(
+            f'{axis} Velocity (m/s)' for axis in axes
+        )
+        error_labels = tuple(f'{axis} Error (m)' for axis in axes) + (
+            'Roll Error (rad)', 'Pitch Error (rad)', 'Yaw Error (rad)'
+        ) + tuple(f'{axis} Velocity Error (m/s)' for axis in axes)
+        for errors, filename in ((False, global_position_filename), (True, global_error_filename)):
+            fig, axs = plt.subplots(9, len(time), figsize=(16, 18), squeeze=False)
+            for column, key in enumerate(time):
+                truth_states = np.column_stack([
+                    global_truth_position[key], global_truth_orientation[key], self.global_truth_velocity[key],
+                ])
+                estimate_states = np.column_stack([
+                    global_estimate_position[key], global_estimate_orientation[key], self.global_estimate_velocity[key],
+                ])
+                state_errors = np.column_stack([
+                    global_position_error[key], global_orientation_error[key],
+                    self.global_truth_velocity[key] - self.global_estimate_velocity[key],
+                ])
+                std = np.column_stack([global_position_std[key], global_orientation_std[key], self.global_velocity_std[key]])
+                for row in range(9):
+                    ax = axs[row, column]
+                    if errors:
+                        ax.plot(time[key], state_errors[:, row], color='red', label='Error')
+                        ax.plot(time[key], 2 * std[:, row], color='blue', label='2 Sigma')
+                        ax.plot(time[key], -2 * std[:, row], color='blue')
+                    else:
+                        ax.plot(time[key], truth_states[:, row], color='blue', label='Truth')
+                        ax.plot(time[key], estimate_states[:, row], color='red', label='Estimate')
+                    for event_index, range_time in enumerate(range_times[key]):
+                        label = 'Range measurement' if row == 0 and event_index == 0 else None
+                        ax.axvline(range_time, color='grey', linestyle='--', linewidth=0.8, alpha=0.7, label=label)
+                    if column == 0:
+                        ax.set_ylabel((error_labels if errors else labels)[row])
+                    if row == 0:
+                        ax.set_title(key)
+                        if column == 0:
+                            ax.legend()
+                    if row == 8:
+                        ax.set_xlabel('Time (s)')
+            fig.tight_layout()
+            fig.savefig(filename)
+            plt.close(fig)
 
         print(f'Plots generated and data saved in {plots_directory}')
 
@@ -382,8 +344,12 @@ def main():
     parser = argparse.ArgumentParser(description='Plot recorded OpenVINS results for one or more agents.')
     parser.add_argument('results_directory', type=Path)
     parser.add_argument('output_directory', type=Path)
+    parser.add_argument('--truth-bag', type=Path, help='HoloOcean bag directory containing /sim/truth_state')
     args = parser.parse_args()
-    DataPlotter(args.results_directory, args.output_directory).plot_data()
+    try:
+        DataPlotter(args.results_directory, args.output_directory, args.truth_bag).plot_data()
+    except (ValueError, OSError) as error:
+        parser.exit(1, f'Error: {error}\n')
 
 
 if __name__ == '__main__':
