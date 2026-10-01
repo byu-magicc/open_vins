@@ -14,7 +14,7 @@ calib_cam_timeoffset: false
 calib_imu_intrinsics: false
 calib_imu_g_sensitivity: false
 
-max_clones: 11
+max_clones: 30
 max_slam: 50
 max_slam_in_update: 25
 max_msckf_in_update: 10
@@ -85,6 +85,10 @@ up_slam_sigma_px: 1
 up_slam_chi2_multipler: 1
 up_aruco_sigma_px: 1
 up_aruco_chi2_multipler: 1
+
+fi_max_dist: 1000.0            # Maximum landmark depth along the anchor camera's optical axis (m).
+fi_max_baseline: 150.0         # Maximum landmark range / transverse camera baseline (dimensionless).
+fi_max_cond_number: 1000000.0  # Maximum linear triangulation matrix condition number.
 
 use_mask: false
 

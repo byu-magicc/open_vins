@@ -13,4 +13,4 @@ cam0:
   intrinsics: [429.61901116, 429.61901116, 511.5, 511.5]
   resolution: [1024, 1024]
   rostopic: /fixedwing/camera/image_raw
-  timeshift_cam_imu: 0.0
+  timeshift_cam_imu: -0.075
