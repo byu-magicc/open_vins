@@ -110,8 +110,6 @@ int main(int argc, char **argv) {
 
     VioManagerOptions params;
     params.print_and_load(parser);
-    if (params.filter_type != VioManagerOptions::FilterType::OPENVINS)
-      throw std::runtime_error("run_bag supports only filter_type=openvins");
     params.set_results_namespace(node->get_namespace());
     params.num_opencv_threads = 0;
     params.use_multi_threading_pubs = false;

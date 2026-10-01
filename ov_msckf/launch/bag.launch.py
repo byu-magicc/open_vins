@@ -29,6 +29,10 @@ def launch_setup(context):
         "bag_path": bag_path,
         "config_path": config_path,
         "verbosity": LaunchConfiguration("verbosity"),
+        "filter_type": LaunchConfiguration("filter_type"),
+        "relinearize_skip": ParameterValue(LaunchConfiguration("relinearize_skip"), value_type=int),
+        "relinearize_threshold": ParameterValue(LaunchConfiguration("relinearize_threshold"), value_type=float),
+        "use_qr": ParameterValue(LaunchConfiguration("use_qr"), value_type=bool),
         "save_results": ParameterValue(LaunchConfiguration("save_results"), value_type=bool),
         "results_path": ParameterValue(LaunchConfiguration("results_path"), value_type=str),
         "visualize": ParameterValue(LaunchConfiguration("rviz_enable"), value_type=bool),
@@ -78,6 +82,18 @@ def generate_launch_description():
         DeclareLaunchArgument("max_cameras", default_value=""),
         DeclareLaunchArgument("use_stereo", default_value=""),
         DeclareLaunchArgument("verbosity", default_value="INFO"),
+        DeclareLaunchArgument(
+            "filter_type", default_value="openvins", description="estimator to expose: openvins, factor_graph, or hybrid",
+        ),
+        DeclareLaunchArgument(
+            "relinearize_skip", default_value="10", description="number of iSAM2 updates between relinearization checks",
+        ),
+        DeclareLaunchArgument(
+            "relinearize_threshold", default_value="0.1", description="change in a variable required for iSAM2 to relinearize it",
+        ),
+        DeclareLaunchArgument(
+            "use_qr", default_value="false", description="use QR factorization in iSAM2 instead of Cholesky",
+        ),
         DeclareLaunchArgument("save_results", default_value="false"),
         DeclareLaunchArgument("results_path", default_value="results"),
         DeclareLaunchArgument("rviz_enable", default_value="false"),
