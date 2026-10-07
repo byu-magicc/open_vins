@@ -5,6 +5,7 @@ set -eo pipefail
 repository_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 workspace_directory=$(cd -- "${repository_directory}/../.." && pwd)
 bags_directory="${workspace_directory}/data/holoocean"
+bag_names=(center_2 left_2 right_2)
 plotter_python="${PLOTTER_PYTHON:-${workspace_directory}/.venv-plotters/bin/python}"
 if [[ ! -x "${plotter_python}" && -z "${PLOTTER_PYTHON:-}" ]]; then
   plotter_python=/usr/bin/python3
@@ -12,7 +13,8 @@ fi
 
 usage() {
   echo "Usage: $(basename -- "$0") [--bags-directory PATH] [verbosity:=LEVEL] [rviz_enable:=BOOL]"
-  echo "Build once, run single-agent OpenVINS on each HoloOcean bag, and plot each separately."
+  echo "Build once, run single-agent OpenVINS on the selected HoloOcean bags, and plot each separately."
+  echo "Selected bags: ${bag_names[*]} (edit bag_names to change the list)."
   echo "Defaults: <workspace>/data/holoocean, processing as fast as OpenVINS allows. Results: <workspace>/runs/<timestamp>/."
   echo "Set PLOTTER_PYTHON to select the plotting interpreter; see ReadMe.md for dependency setup."
 }
@@ -36,12 +38,12 @@ if [[ ! -d "${bags_directory}" ]]; then
   exit 2
 fi
 bags_directory=$(cd -- "${bags_directory}" && pwd)
-shopt -s nullglob
-bag_metadata=("${bags_directory}"/*/metadata.yaml)
-if ((${#bag_metadata[@]} == 0)); then
-  echo "Error: no bag directories containing metadata.yaml in ${bags_directory}" >&2
-  exit 2
-fi
+for bag_name in "${bag_names[@]}"; do
+  if [[ ! -f "${bags_directory}/${bag_name}/metadata.yaml" ]]; then
+    echo "Error: selected bag is missing metadata.yaml: ${bags_directory}/${bag_name}" >&2
+    exit 2
+  fi
+done
 if ! MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/openvins-plotters-matplotlib}" \
   "${plotter_python}" -c 'import rosbags.highlevel, numpy, scipy, matplotlib' 2>/dev/null; then
   echo "Error: install the plotting dependencies in ReadMe.md and set PLOTTER_PYTHON." >&2
@@ -62,9 +64,8 @@ mkdir -p "${workspace_directory}/runs"
 mkdir "${run_directory}"
 export MPLCONFIGDIR="${run_directory}/matplotlib"
 
-for metadata in "${bag_metadata[@]}"; do
-  bag_directory=$(dirname -- "${metadata}")
-  bag_name=$(basename -- "${bag_directory}")
+for bag_name in "${bag_names[@]}"; do
+  bag_directory="${bags_directory}/${bag_name}"
   results_directory="${run_directory}/results/${bag_name}"
   plots_directory="${run_directory}/plots/${bag_name}"
   export ROS_LOG_DIR="${run_directory}/ros_logs/${bag_name}"
