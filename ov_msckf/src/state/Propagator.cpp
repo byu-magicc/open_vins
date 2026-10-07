@@ -21,6 +21,8 @@
 
 #include "Propagator.h"
 
+#include <stdexcept>
+
 #include "state/State.h"
 #include "state/StateHelper.h"
 #include "utils/print.h"
@@ -31,14 +33,15 @@ using namespace ov_type;
 using namespace ov_msckf;
 
 void Propagator::propagate_and_clone(std::shared_ptr<State> state, double timestamp) {
-
-  // If the difference between the current update time and state is zero
-  // We should crash, as this means we would have two clones at the same time!!!!
-  if (state->_timestamp == timestamp) {
-    PRINT_ERROR(RED "Propagator::propagate_and_clone(): Propagation called again at same timestep at last update timestep!!!!\n" RESET);
+  if (state->_clones_IMU.count(timestamp) != 0) {
+    PRINT_ERROR(RED "Propagator::propagate_and_clone(): duplicate camera clone at %.9f\n" RESET, timestamp);
     std::exit(EXIT_FAILURE);
   }
+  const Eigen::Vector3d last_w = propagate(state, timestamp);
+  StateHelper::augment_clone(state, last_w);
+}
 
+Eigen::Vector3d Propagator::propagate(std::shared_ptr<State> state, double timestamp) {
   // We should crash if we are trying to propagate backwards
   if (state->_timestamp > timestamp) {
     PRINT_ERROR(RED "Propagator::propagate_and_clone(): Propagation called trying to propagate backwards in time!!!!\n" RESET);
@@ -65,7 +68,15 @@ void Propagator::propagate_and_clone(std::shared_ptr<State> state, double timest
   std::vector<ov_core::ImuData> prop_data;
   {
     std::lock_guard<std::mutex> lck(imu_data_mtx);
-    prop_data = Propagator::select_imu_readings(imu_data, time0, time1);
+    if (time0 == time1) {
+      auto next = std::upper_bound(imu_data.begin(), imu_data.end(), time1,
+                                   [](double time, const ov_core::ImuData &data) { return time < data.timestamp; });
+      if (next == imu_data.begin() || next == imu_data.end())
+        throw std::runtime_error("No IMU bracket for camera cloning at an existing state timestamp");
+      prop_data.push_back(interpolate_data(*(next - 1), *next, time1));
+    } else {
+      prop_data = Propagator::select_imu_readings(imu_data, time0, time1);
+    }
   }
 
   // We are going to sum up all the state transition matrices, so we can do a single large multiplication at the end
@@ -133,8 +144,7 @@ void Propagator::propagate_and_clone(std::shared_ptr<State> state, double timest
   state->_timestamp = timestamp;
   last_prop_time_offset = t_off_new;
 
-  // Now perform stochastic cloning
-  StateHelper::augment_clone(state, last_w);
+  return last_w;
 }
 
 bool Propagator::fast_state_propagate(std::shared_ptr<State> state, double timestamp, Eigen::Matrix<double, 13, 1> &state_plus,

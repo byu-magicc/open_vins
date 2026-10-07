@@ -30,6 +30,7 @@
 #include <vector>
 
 #include <cv_bridge/cv_bridge.hpp>
+#include <geometry_msgs/msg/twist_with_covariance_stamped.hpp>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/synchronizer.h>
 #include <rclcpp/rclcpp.hpp>
@@ -37,6 +38,7 @@
 #include <sensor_msgs/image_encodings.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/nav_sat_fix.hpp>
 
 #include "core/VioManager.h"
 #include "ros/ROS2Visualizer.h"
@@ -140,6 +142,24 @@ int main(int argc, char **argv) {
     if (!parser->successful())
       throw std::runtime_error("Unable to parse all estimator parameters");
 
+    const bool use_gps = params.max_gps_init_time > 0.0;
+    if (use_gps && params.filter_type != VioManagerOptions::FilterType::OPENVINS)
+      throw std::runtime_error("GPS initialization is only implemented for filter_type:=openvins; use max_gps_init_time:=0 otherwise");
+    std::unique_ptr<BagStream<sensor_msgs::msg::NavSatFix>> gps_fix;
+    std::unique_ptr<BagStream<geometry_msgs::msg::TwistWithCovarianceStamped>> gps_velocity;
+    if (use_gps) {
+      std::string fix_topic = "/gps/fix";
+      std::string velocity_topic = "/gps/velocity";
+      node->get_parameter("topic_gps_fix", fix_topic);
+      node->get_parameter("topic_gps_velocity", velocity_topic);
+      gps_fix = std::make_unique<BagStream<sensor_msgs::msg::NavSatFix>>();
+      gps_velocity = std::make_unique<BagStream<geometry_msgs::msg::TwistWithCovarianceStamped>>();
+      gps_fix->open(bag_path, fix_topic, "sensor_msgs/msg/NavSatFix");
+      gps_velocity->open(bag_path, velocity_topic, "geometry_msgs/msg/TwistWithCovarianceStamped");
+      if (!gps_fix->has_next || !gps_velocity->has_next)
+        throw std::runtime_error("GPS initialization requires nonempty fix and velocity topics");
+    }
+
     BagStream<sensor_msgs::msg::Imu> imu;
     imu.open(bag_path, imu_topic, "sensor_msgs/msg/Imu");
     std::vector<std::unique_ptr<BagStream<sensor_msgs::msg::Image>>> cameras;
@@ -166,6 +186,12 @@ int main(int argc, char **argv) {
     size_t imu_count = 0;
     size_t image_count = 0;
     size_t update_count = 0;
+    size_t gps_pairs = 0;
+    size_t gps_applied = 0;
+    size_t gps_unpaired = 0;
+    size_t gps_invalid = 0;
+    double first_gps_applied = 0.0;
+    double last_gps_applied = 0.0;
     size_t images_read = 0;
     size_t stereo_images_matched = 0;
     using Image = sensor_msgs::msg::Image;
@@ -225,6 +251,57 @@ int main(int argc, char **argv) {
 
       const double camera_time = rclcpp::Time(frames.front().second->header.stamp).seconds();
       const double required_imu_time = camera_time + sys->get_state()->_calib_dt_CAMtoIMU->value()(0);
+      // GPS headers share the IMU clock. Apply matched samples before the next camera update.
+      while (gps_fix && gps_fix->has_next && gps_velocity->has_next) {
+        const int64_t fix_stamp = rclcpp::Time(gps_fix->next.header.stamp).nanoseconds();
+        const int64_t velocity_stamp = rclcpp::Time(gps_velocity->next.header.stamp).nanoseconds();
+        if (std::min(fix_stamp, velocity_stamp) * 1e-9 > required_imu_time)
+          break;
+        if (fix_stamp != velocity_stamp) {
+          ++gps_unpaired;
+          if (fix_stamp < velocity_stamp)
+            gps_fix->advance();
+          else
+            gps_velocity->advance();
+          continue;
+        }
+        const double gps_time = rclcpp::Time(gps_fix->next.header.stamp).seconds();
+        if (sys->initialized_time() >= 0.0 &&
+            gps_time - sys->get_state()->_calib_dt_CAMtoIMU->value()(0) >= sys->initialized_time() + params.max_gps_init_time) {
+          gps_fix.reset();
+          gps_velocity.reset();
+          break;
+        }
+        ++gps_pairs;
+        const auto &fix = gps_fix->next;
+        const auto &velocity = gps_velocity->next;
+        if (velocity.header.frame_id != "enu")
+          throw std::runtime_error("GPS velocity must be in the local ENU frame (header.frame_id = enu)");
+        if (fix.status.status < sensor_msgs::msg::NavSatStatus::STATUS_FIX ||
+            fix.position_covariance_type == sensor_msgs::msg::NavSatFix::COVARIANCE_TYPE_UNKNOWN) {
+          ++gps_invalid;
+        } else {
+          while (imu.has_next && last_imu_time <= gps_time)
+            feed_imu();
+          if (last_imu_time > gps_time) {
+            ov_core::GPSData gps;
+            gps.timestamp = gps_time;
+            gps.lla << fix.latitude, fix.longitude, fix.altitude;
+            gps.velocity << velocity.twist.twist.linear.x, velocity.twist.twist.linear.y, velocity.twist.twist.linear.z;
+            gps.cov_position = Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>>(fix.position_covariance.data());
+            gps.cov_velocity =
+                Eigen::Map<const Eigen::Matrix<double, 6, 6, Eigen::RowMajor>>(velocity.twist.covariance.data()).topLeftCorner<3, 3>();
+            if (sys->feed_measurement_gps(gps)) {
+              if (gps_applied == 0)
+                first_gps_applied = gps_time;
+              last_gps_applied = gps_time;
+              ++gps_applied;
+            }
+          }
+        }
+        gps_fix->advance();
+        gps_velocity->advance();
+      }
       while (imu.has_next && last_imu_time <= required_imu_time)
         feed_imu();
       if (last_imu_time <= required_imu_time) {
@@ -253,6 +330,14 @@ int main(int argc, char **argv) {
     while (rclcpp::ok() && imu.has_next)
       feed_imu();
     PRINT_INFO("[BAG]: Fed %zu IMU samples and %zu images in %zu camera updates\n", imu_count, image_count, update_count);
+    if (use_gps) {
+      PRINT_INFO("[GPS]: Applied %zu of %zu paired samples; %zu invalid fixes and %zu unpaired messages; first/last %.9f %.9f\n",
+                 gps_applied, gps_pairs, gps_invalid, gps_unpaired, first_gps_applied, last_gps_applied);
+      PRINT_INFO("[GPS]: VIO initialization %.9f, cutoff %.9f (camera clock)\n", sys->initialized_time(),
+                 sys->initialized_time() + params.max_gps_init_time);
+      if (gps_applied == 0)
+        PRINT_WARNING("[GPS]: No usable GPS measurements were applied during initialization\n");
+    }
     if (stereo_sync && images_read > stereo_images_matched)
       PRINT_WARNING("[BAG]: %zu stereo images were not matched by OpenVINS synchronization\n", images_read - stereo_images_matched);
     if (viz)

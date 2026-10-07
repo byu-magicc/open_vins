@@ -27,7 +27,6 @@
 #include <memory>
 
 namespace ov_core {
-struct GPSData;
 struct ImuData;
 } // namespace ov_core
 
@@ -51,9 +50,6 @@ public:
   /** @brief Forward a raw IMU sample to the graph state's preintegration buffer. */
   void feed_imu(const ov_core::ImuData &message);
 
-  /** @brief Forward a raw GPS sample to the graph state's pending global measurements. */
-  void feed_gps(const ov_core::GPSData &message);
-
   /** @brief Seed the graph from the complete successful OpenVINS state and covariance. */
   void initialize(const std::shared_ptr<State> &openvins_state);
 
@@ -68,9 +64,6 @@ public:
 
   /** @brief Match OpenVINS removal of persistent visual landmarks. */
   void marginalize_landmarks(const std::vector<size_t> &feature_ids);
-
-  /** @brief Apply queued global measurements at the same update boundary as OpenVINS. */
-  void apply_pending_global_factors(double timestamp);
 
   /** @brief Commit a camera transaction without extracting an estimate or covariance. */
   void finish_camera_update();

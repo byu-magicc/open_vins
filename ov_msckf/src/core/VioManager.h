@@ -27,6 +27,7 @@
 #include <atomic>
 #include <boost/filesystem.hpp>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -93,9 +94,10 @@ public:
 
   /**
    * @brief Feed function for a GPS measurement
-   * @param message Contains our timestamp, gps, and vehicle transformation
+   * @param message Contains an IMU-clock timestamp, WGS84 fix, local ENU velocity, and covariances
+   * @return True if the measurement was applied within the GPS initialization window
    */
-  void feed_measurement_gps(const ov_core::GPSData &message);
+  bool feed_measurement_gps(const ov_core::GPSData &message);
 
   /**
    * @brief Feed function for a synchronized simulated cameras
@@ -264,6 +266,9 @@ protected:
 
   // Startup time of the filter
   double startup_time = -1;
+
+  /// Reject duplicate or out-of-order GPS updates, including equal-time measurements.
+  double last_gps_time = -std::numeric_limits<double>::infinity();
 
   // Threads and their atomics
   std::atomic<bool> thread_init_running, thread_init_success;

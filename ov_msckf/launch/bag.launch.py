@@ -37,10 +37,14 @@ def launch_setup(context):
         "results_path": ParameterValue(LaunchConfiguration("results_path"), value_type=str),
         "visualize": ParameterValue(LaunchConfiguration("rviz_enable"), value_type=bool),
     }
-    for name, value_type in (("max_cameras", int), ("use_stereo", bool), ("topic_imu", str)):
+    for name, value_type in (
+        ("max_cameras", int), ("use_stereo", bool), ("topic_imu", str),
+        ("max_gps_init_time", float), ("initial_global_yaw", float),
+        ("topic_gps_fix", str), ("topic_gps_velocity", str),
+    ):
         value = LaunchConfiguration(name).perform(context)
         if value:
-            parameters[name] = ParameterValue(value, value_type=value_type)
+            parameters[name] = float(value) if value_type is float else ParameterValue(value, value_type=value_type)
     camera_topics = LaunchConfiguration("camera_topics").perform(context)
     if camera_topics:
         parameters["camera_topics"] = [topic.strip() for topic in camera_topics.split(",")]
@@ -79,6 +83,10 @@ def generate_launch_description():
         DeclareLaunchArgument("config_path", default_value=""),
         DeclareLaunchArgument("topic_imu", default_value="", description="Override the IMU topic from the config"),
         DeclareLaunchArgument("camera_topics", default_value="", description="Comma-separated camera topics in camera ID order"),
+        DeclareLaunchArgument("max_gps_init_time", default_value="", description="GPS assistance duration from VIO initialization (seconds)"),
+        DeclareLaunchArgument("initial_global_yaw", default_value="", description="IMU heading at VIO initialization in ENU radians, counterclockwise from east"),
+        DeclareLaunchArgument("topic_gps_fix", default_value="/gps/fix"),
+        DeclareLaunchArgument("topic_gps_velocity", default_value="/gps/velocity"),
         DeclareLaunchArgument("max_cameras", default_value=""),
         DeclareLaunchArgument("use_stereo", default_value=""),
         DeclareLaunchArgument("verbosity", default_value="INFO"),

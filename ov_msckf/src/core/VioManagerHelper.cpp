@@ -33,6 +33,7 @@
 #include "state/Propagator.h"
 #include "state/State.h"
 #include "state/StateHelper.h"
+#include "update/UpdaterGlobal.h"
 
 using namespace ov_core;
 using namespace ov_type;
@@ -56,6 +57,7 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   // Set the state time
   state->_timestamp = imustate(0, 0);
   startup_time = imustate(0, 0);
+  updaterGlobal->set_initial_attitude(state->_imu->Rot());
   is_initialized_vio = true;
 
   // Seed the passive graph with the same initialized navigation value and uncertainty
@@ -122,6 +124,7 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       // Set the state time
       state->_timestamp = timestamp;
       startup_time = timestamp;
+      updaterGlobal->set_initial_attitude(state->_imu->Rot());
 
       // Seed the passive graph only after OpenVINS has accepted the initialization result
       if (factorGraphManager != nullptr) {

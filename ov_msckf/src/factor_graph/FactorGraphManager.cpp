@@ -33,8 +33,6 @@ FactorGraphManager::FactorGraphManager(const VioManagerOptions &options) : state
 
 void FactorGraphManager::feed_imu(const ov_core::ImuData &message) { state->feed_imu(message); }
 
-void FactorGraphManager::feed_gps(const ov_core::GPSData &message) { state->feed_gps(message); }
-
 void FactorGraphManager::initialize(const std::shared_ptr<State> &openvins_state) {
   FactorGraphInitialization initialization;
   initialization.timestamp = openvins_state->_timestamp;
@@ -80,8 +78,6 @@ void FactorGraphManager::add_zero_velocity_factor(double timestamp) { state->add
 void FactorGraphManager::add_visual_factors(const FactorGraphVisualUpdate &update) { state->add_visual_factors(update); }
 
 void FactorGraphManager::marginalize_landmarks(const std::vector<size_t> &feature_ids) { state->marginalize_landmarks(feature_ids); }
-
-void FactorGraphManager::apply_pending_global_factors(double timestamp) { state->apply_pending_global_factors(timestamp); }
 
 void FactorGraphManager::finish_camera_update() { state->finish_update(); }
 

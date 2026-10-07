@@ -10,39 +10,24 @@ namespace ov_msckf {
 
 class State;
 
-/**
- * @ brief Applied global measurements to the state
- *
- * This class is responsible for applying global measurements to the state.
- *
- * The IMU clones are removed from the state after a global measurement is applied to avoid
- * camera measurements attempting to triangluate features across a jump in estimated position.
- */
+/** @brief Apply GPS position/velocity updates without discarding correlated camera clones. */
 class UpdaterGlobal {
 public:
-  /**
-   * @brief Default constructor for the global updater
-   */
-  UpdaterGlobal();
+  explicit UpdaterGlobal(double initial_global_yaw);
 
-  /**
-   * @brief Feed in GPS data from the multi-agent backend
-   *
-   * @param message Contains our timestamp, gps, uncertainty, and vehicle transformation
-   */
-  void feed_gps(const ov_core::GPSData &message);
+  /// Resolve the global yaw gauge using the accepted VIO initialization attitude.
+  void set_initial_attitude(const Eigen::Matrix3d &R_GtoI);
 
-  /**
-   * @brief Update the state with the global measurements and remove IMU clones
-   *
-   * @param state State of the filter
-   */
-  void update(std::shared_ptr<State> state);
+  /// Apply a measurement to a state propagated to the measurement's timestamp.
+  void update(std::shared_ptr<State> state, const ov_core::GPSData &message);
 
 private:
-  /// GPS data from the multi-agent backend
-  std::vector<ov_core::GPSData> gps_data;
-  std::mutex gps_data_mtx;
+  double initial_global_yaw;
+  double yaw_enu_to_global = 0.0;
+  bool aligned = false;
+  Eigen::Matrix3d R_ecef_to_global;
+  Eigen::Vector3d origin_ecef;
+  Eigen::Vector3d origin_global;
 };
 
 } // namespace ov_msckf

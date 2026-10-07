@@ -78,26 +78,19 @@ struct CameraData {
   }
 };
 
-/**
- * @brief Struct for GPS measurements.
- *
- * GPS measurements come from the multi-agent backend. Measurements come as a tuple of a global measurement and the
- * transform from the vehicle receiving the global measurement to the current vehicle, in global frame. If these are
- * the same, the transformation should be zero.
- */
+/** @brief GPS position and velocity at a common timestamp in the IMU clock. */
 struct GPSData {
-
-  /// Timestamp of the reading
   double timestamp;
 
-  /// Global measurement
-  Eigen::Matrix<double, 3, 1> z_global;
+  /// WGS84 latitude / longitude in degrees and ellipsoid height in meters.
+  Eigen::Vector3d lla;
 
-  /// Covariance of the global measurement
-  Eigen::Matrix<double, 3, 3> cov_z_global;
+  /// Velocity in the local ENU frame at lla (m/s).
+  Eigen::Vector3d velocity;
 
-  /// Sort function to allow for using of STL containers
-  bool operator<(const GPSData &other) const { return timestamp < other.timestamp; }
+  /// Position (m^2) and velocity ((m/s)^2) covariance in that same local ENU frame.
+  Eigen::Matrix3d cov_position;
+  Eigen::Matrix3d cov_velocity;
 };
 
 } // namespace ov_core

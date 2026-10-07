@@ -7,6 +7,10 @@ from launch.substitutions import LaunchConfiguration, ThisLaunchFileDir
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("bag_path", description="HoloOcean ROS 2 bag directory"),
+        DeclareLaunchArgument("max_gps_init_time", default_value=""),
+        DeclareLaunchArgument("initial_global_yaw", default_value=""),
+        DeclareLaunchArgument("topic_gps_fix", default_value="/gps/fix"),
+        DeclareLaunchArgument("topic_gps_velocity", default_value="/gps/velocity"),
         DeclareLaunchArgument("rviz_enable", default_value="false"),
         DeclareLaunchArgument("verbosity", default_value="INFO"),
         DeclareLaunchArgument(
@@ -28,6 +32,10 @@ def generate_launch_description():
             launch_arguments={
                 "bag_path": LaunchConfiguration("bag_path"),
                 "config": "holoocean_fixedwing",
+                "max_gps_init_time": LaunchConfiguration("max_gps_init_time"),
+                "initial_global_yaw": LaunchConfiguration("initial_global_yaw"),
+                "topic_gps_fix": LaunchConfiguration("topic_gps_fix"),
+                "topic_gps_velocity": LaunchConfiguration("topic_gps_velocity"),
                 "topic_imu": "/imu/data",
                 "camera_topics": "/fixedwing/camera/image_raw",
                 "rviz_enable": LaunchConfiguration("rviz_enable"),

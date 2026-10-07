@@ -19,7 +19,6 @@
 #include <gtsam/linear/GaussianFactorGraph.h>
 #include <gtsam/linear/HessianFactor.h>
 #include <gtsam/linear/JacobianFactor.h>
-#include <gtsam/navigation/GPSFactor.h>
 #include <gtsam/nonlinear/ISAM2UpdateParams.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/LinearContainerFactor.h>
@@ -183,11 +182,6 @@ void FactorGraphState::feed_imu(const ov_core::ImuData &message) {
   if (!imu_buffer.empty() && message.timestamp <= imu_buffer.back().timestamp)
     return;
   imu_buffer.push_back(message);
-}
-
-void FactorGraphState::feed_gps(const ov_core::GPSData &message) {
-  std::lock_guard<std::mutex> lock(mutex);
-  gps_buffer.push_back(message);
 }
 
 void FactorGraphState::initialize(const FactorGraphInitialization &initialization) {
@@ -532,19 +526,6 @@ void FactorGraphState::marginalize_landmarks(const std::vector<size_t> &feature_
     // Stop associating future frontend tracks with this graph variable.
     landmark_keys.erase(landmark);
   }
-}
-
-void FactorGraphState::apply_pending_global_factors(double timestamp) {
-  std::lock_guard<std::mutex> lock(mutex);
-  if (!initialized || failed || gps_buffer.empty())
-    return;
-  Frame &frame = ensure_frame(timestamp);
-  for (const auto &gps : gps_buffer) {
-    pending_factors.emplace_shared<gtsam::GPSFactor>(frame.pose_key, gtsam::Point3(gps.z_global),
-                                                     gtsam::noiseModel::Gaussian::Covariance(gps.cov_z_global));
-  }
-  gps_buffer.clear();
-  commit();
 }
 
 FactorGraphResult FactorGraphState::get_estimate(double timestamp) {

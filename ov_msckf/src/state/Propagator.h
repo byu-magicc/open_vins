@@ -115,6 +115,9 @@ public:
    */
   void propagate_and_clone(std::shared_ptr<State> state, double timestamp);
 
+  /// Propagate without a clone. Return corrected angular velocity for camera-time augmentation.
+  Eigen::Vector3d propagate(std::shared_ptr<State> state, double timestamp);
+
   /**
    * @brief Gets what the state and its covariance will be at a given timestamp
    *

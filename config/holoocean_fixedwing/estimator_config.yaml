@@ -1,5 +1,8 @@
 %YAML:1.0
 
+max_gps_init_time: 30.0
+initial_global_yaw: 1.5707963267948966  # IMU heading at VIO initialization: north in ENU.
+
 verbosity: "INFO"
 
 filter_type: "openvins"
