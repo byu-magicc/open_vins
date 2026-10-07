@@ -93,6 +93,15 @@ struct GPSData {
   Eigen::Matrix3d cov_velocity;
 };
 
+/** @brief Accepted GPS observation in the VIO global frame, with a camera-clock timestamp. */
+struct GPSGlobalData {
+  double timestamp;
+  Eigen::Vector3d position;
+  Eigen::Vector3d velocity;
+  Eigen::Matrix3d cov_position;
+  Eigen::Matrix3d cov_velocity;
+};
+
 } // namespace ov_core
 
 #endif // OV_CORE_SENSOR_DATA_H

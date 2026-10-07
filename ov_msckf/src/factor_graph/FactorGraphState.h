@@ -41,6 +41,7 @@ public:
   void initialize(const FactorGraphInitialization &initialization);
   void materialize_clone(double timestamp);
   void add_zero_velocity_factor(double timestamp);
+  void add_gps_factors(const ov_core::GPSGlobalData &message);
   void add_visual_factors(const FactorGraphVisualUpdate &update);
   void marginalize_landmarks(const std::vector<size_t> &feature_ids);
 

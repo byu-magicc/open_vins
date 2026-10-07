@@ -19,9 +19,11 @@
 #include <gtsam/linear/GaussianFactorGraph.h>
 #include <gtsam/linear/HessianFactor.h>
 #include <gtsam/linear/JacobianFactor.h>
+#include <gtsam/navigation/GPSFactor.h>
 #include <gtsam/nonlinear/ISAM2UpdateParams.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/LinearContainerFactor.h>
+#include <gtsam/nonlinear/PriorFactor.h>
 #include <gtsam/sam/RangeFactor.h>
 
 #include <algorithm>
@@ -328,6 +330,18 @@ void FactorGraphState::materialize_clone(double timestamp) {
   if (!initialized || failed || frames.find(timestamp) != frames.end())
     return;
   ensure_frame(timestamp);
+}
+
+void FactorGraphState::add_gps_factors(const ov_core::GPSGlobalData &message) {
+  std::lock_guard<std::mutex> lock(mutex);
+  if (!initialized || failed)
+    return;
+  const Frame &frame = ensure_frame(message.timestamp);
+  pending_factors.emplace_shared<gtsam::GPSFactor>(frame.pose_key, message.position,
+                                                  gtsam::noiseModel::Gaussian::Covariance(message.cov_position));
+  pending_factors.emplace_shared<gtsam::PriorFactor<gtsam::Vector3>>(
+      frame.velocity_key, message.velocity, gtsam::noiseModel::Gaussian::Covariance(message.cov_velocity));
+  commit();
 }
 
 void FactorGraphState::add_zero_velocity_factor(double timestamp) {

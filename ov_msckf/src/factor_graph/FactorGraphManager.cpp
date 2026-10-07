@@ -75,6 +75,8 @@ void FactorGraphManager::materialize_clone(double timestamp) { state->materializ
 
 void FactorGraphManager::add_zero_velocity_factor(double timestamp) { state->add_zero_velocity_factor(timestamp); }
 
+void FactorGraphManager::add_gps_factors(const ov_core::GPSGlobalData &message) { state->add_gps_factors(message); }
+
 void FactorGraphManager::add_visual_factors(const FactorGraphVisualUpdate &update) { state->add_visual_factors(update); }
 
 void FactorGraphManager::marginalize_landmarks(const std::vector<size_t> &feature_ids) { state->marginalize_landmarks(feature_ids); }

@@ -144,8 +144,6 @@ int main(int argc, char **argv) {
       throw std::runtime_error("Unable to parse all estimator parameters");
 
     const bool use_gps = params.max_gps_init_time > 0.0;
-    if (use_gps && params.filter_type != VioManagerOptions::FilterType::OPENVINS)
-      throw std::runtime_error("GPS initialization is only implemented for filter_type:=openvins; use max_gps_init_time:=0 otherwise");
     std::unique_ptr<BagStream<sensor_msgs::msg::NavSatFix>> gps_fix;
     std::unique_ptr<BagStream<geometry_msgs::msg::TwistWithCovarianceStamped>> gps_velocity;
     if (use_gps) {

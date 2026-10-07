@@ -18,8 +18,8 @@ public:
   /// Resolve the global yaw gauge using the accepted VIO initialization attitude.
   void set_initial_attitude(const Eigen::Matrix3d &R_GtoI);
 
-  /// Apply a measurement to a state propagated to the measurement's timestamp.
-  void update(std::shared_ptr<State> state, const ov_core::GPSData &message);
+  /// Update the propagated state and return the same global-frame observation for the graph.
+  ov_core::GPSGlobalData update(std::shared_ptr<State> state, const ov_core::GPSData &message);
 
 private:
   double initial_global_yaw;

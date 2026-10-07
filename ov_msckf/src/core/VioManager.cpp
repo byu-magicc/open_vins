@@ -394,8 +394,6 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
 }
 
 bool VioManager::feed_measurement_gps(const ov_core::GPSData &message) {
-  if (params.filter_type != VioManagerOptions::FilterType::OPENVINS)
-    throw std::runtime_error("GPS position/velocity updates are only implemented for the OpenVINS EKF");
   const double timestamp = message.timestamp - state->_calib_dt_CAMtoIMU->value()(0);
   if (!is_initialized_vio || params.max_gps_init_time == 0.0 || timestamp < startup_time ||
       timestamp >= startup_time + params.max_gps_init_time || timestamp < state->_timestamp || message.timestamp <= last_gps_time)
@@ -410,7 +408,9 @@ bool VioManager::feed_measurement_gps(const ov_core::GPSData &message) {
   }
   if (state->_timestamp != timestamp)
     propagator->propagate(state, timestamp);
-  updaterGlobal->update(state, message);
+  const ov_core::GPSGlobalData observation = updaterGlobal->update(state, message);
+  if (factorGraphManager != nullptr)
+    factorGraphManager->add_gps_factors(observation);
   last_gps_time = message.timestamp;
   propagator->invalidate_cache();
   estimator_result_cache_valid = false;

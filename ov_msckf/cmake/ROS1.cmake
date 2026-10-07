@@ -161,6 +161,10 @@ add_executable(test_factor_graph_distributed src/test_factor_graph_distributed.c
 target_link_libraries(test_factor_graph_distributed ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS test_factor_graph_distributed DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
+add_executable(test_gps_init src/test_gps_init.cpp)
+target_link_libraries(test_gps_init ov_msckf_lib ${thirdparty_libraries})
+install(TARGETS test_gps_init DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
+
 add_executable(test_sim_repeat src/test_sim_repeat.cpp)
 target_link_libraries(test_sim_repeat ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS test_sim_repeat

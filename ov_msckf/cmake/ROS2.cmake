@@ -126,6 +126,11 @@ ament_target_dependencies(test_factor_graph_distributed ${ament_libraries})
 target_link_libraries(test_factor_graph_distributed ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS test_factor_graph_distributed DESTINATION lib/${PROJECT_NAME})
 
+add_executable(test_gps_init src/test_gps_init.cpp)
+ament_target_dependencies(test_gps_init ${ament_libraries})
+target_link_libraries(test_gps_init ov_msckf_lib ${thirdparty_libraries})
+install(TARGETS test_gps_init DESTINATION lib/${PROJECT_NAME})
+
 add_executable(test_sim_repeat src/test_sim_repeat.cpp)
 ament_target_dependencies(test_sim_repeat ${ament_libraries})
 target_link_libraries(test_sim_repeat ov_msckf_lib ${thirdparty_libraries})

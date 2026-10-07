@@ -59,6 +59,9 @@ public:
   /** @brief Incorporate a zero-velocity constraint accepted by OpenVINS. */
   void add_zero_velocity_factor(double timestamp);
 
+  /** @brief Apply and commit the same global GPS observation used by OpenVINS. */
+  void add_gps_factors(const ov_core::GPSGlobalData &message);
+
   /** @brief Incorporate a value-owned batch of visual tracks accepted by OpenVINS. */
   void add_visual_factors(const FactorGraphVisualUpdate &update);
 

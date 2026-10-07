@@ -15,7 +15,7 @@ void UpdaterGlobal::set_initial_attitude(const Eigen::Matrix3d &R_GtoI) {
   aligned = false;
 }
 
-void UpdaterGlobal::update(std::shared_ptr<State> state, const ov_core::GPSData &message) {
+ov_core::GPSGlobalData UpdaterGlobal::update(std::shared_ptr<State> state, const ov_core::GPSData &message) {
   const Eigen::Vector3d position_ecef = ov_core::lla_to_ecef(message.lla);
   const Eigen::Matrix3d R_ecef_to_enu = ov_core::ecef_to_enu(message.lla);
   if (!aligned) {
@@ -37,4 +37,5 @@ void UpdaterGlobal::update(std::shared_ptr<State> state, const ov_core::GPSData 
   PRINT_DEBUG("[GPS]: t=%.9f residual p=%.6f %.6f %.6f v=%.6f %.6f %.6f\n", message.timestamp, residual(0), residual(1), residual(2),
               residual(3), residual(4), residual(5));
   StateHelper::EKFUpdate(state, {state->_imu->p(), state->_imu->v()}, Eigen::Matrix<double, 6, 6>::Identity(), residual, covariance);
+  return {state->_timestamp, position, velocity, covariance.topLeftCorner<3, 3>(), covariance.bottomRightCorner<3, 3>()};
 }
