@@ -20,6 +20,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -182,6 +183,7 @@ int main(int argc, char **argv) {
     if (visualize)
       viz = std::make_shared<ROS2Visualizer>(node, sys);
 
+    const double first_imu_time = rclcpp::Time(imu.next.header.stamp).seconds();
     double last_imu_time = -std::numeric_limits<double>::infinity();
     size_t imu_count = 0;
     size_t image_count = 0;
@@ -218,6 +220,7 @@ int main(int argc, char **argv) {
         viz->visualize_odometry(data.timestamp);
       imu.advance();
     };
+    const auto processing_start = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
       std::vector<std::pair<int, Image::ConstSharedPtr>> frames;
       do {
@@ -329,7 +332,9 @@ int main(int argc, char **argv) {
 
     while (rclcpp::ok() && imu.has_next)
       feed_imu();
+    const double processing_time = std::chrono::duration<double>(std::chrono::steady_clock::now() - processing_start).count();
     PRINT_INFO("[BAG]: Fed %zu IMU samples and %zu images in %zu camera updates\n", imu_count, image_count, update_count);
+    PRINT_INFO("[BAG]: Simulated time %.3f seconds | processing time %.3f seconds\n", last_imu_time - first_imu_time, processing_time);
     if (use_gps) {
       PRINT_INFO("[GPS]: Applied %zu of %zu paired samples; %zu invalid fixes and %zu unpaired messages; first/last %.9f %.9f\n",
                  gps_applied, gps_pairs, gps_invalid, gps_unpaired, first_gps_applied, last_gps_applied);

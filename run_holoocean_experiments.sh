@@ -75,6 +75,8 @@ for bag_name in "${bag_names[@]}"; do
     "${launch_arguments[@]}" save_results:=true \
     results_path:="${results_directory}" bag_path:="${bag_directory}" \
     >"${ROS_LOG_DIR}/launch.log" 2>&1
+  awk -v bag="${bag_name}" '/\[BAG\]: Simulated time/ { sub(/^.*\[BAG\]: /, ""); print bag ": " $0 }' \
+    "${ROS_LOG_DIR}/launch.log"
   "${plotter_python}" "${repository_directory}/plotters/plot_results.py" \
     "${results_directory}" "${plots_directory}" --truth-bag "${bag_directory}"
 done
