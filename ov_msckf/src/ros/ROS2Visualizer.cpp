@@ -126,8 +126,10 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
       boost::filesystem::remove(filepath_std);
 
     // Create folder path to this location if not exists
-    boost::filesystem::create_directories(boost::filesystem::path(filepath_est.c_str()).parent_path());
-    boost::filesystem::create_directories(boost::filesystem::path(filepath_std.c_str()).parent_path());
+    if (!boost::filesystem::path(filepath_est).parent_path().empty())
+      boost::filesystem::create_directories(boost::filesystem::path(filepath_est).parent_path());
+    if (!boost::filesystem::path(filepath_std).parent_path().empty())
+      boost::filesystem::create_directories(boost::filesystem::path(filepath_std).parent_path());
 
     // Open the files
     of_state_est.open(filepath_est.c_str());
@@ -141,7 +143,8 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
     if (_sim != nullptr) {
       if (boost::filesystem::exists(filepath_gt))
         boost::filesystem::remove(filepath_gt);
-      boost::filesystem::create_directories(boost::filesystem::path(filepath_gt.c_str()).parent_path());
+      if (!boost::filesystem::path(filepath_gt).parent_path().empty())
+        boost::filesystem::create_directories(boost::filesystem::path(filepath_gt).parent_path());
       of_state_gt.open(filepath_gt.c_str());
       of_state_gt << "# timestamp(s) q p v bg ba cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc"
                   << std::endl;
@@ -150,15 +153,20 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
 
   // Start thread for the image publishing
   if (_app->get_params().use_multi_threading_pubs) {
-    std::thread thread([&] {
+    image_publish_thread = std::thread([this] {
       rclcpp::Rate loop_rate(20);
-      while (rclcpp::ok()) {
+      while (rclcpp::ok() && !stop_image_publishing) {
         publish_images();
         loop_rate.sleep();
       }
     });
-    thread.detach();
   }
+}
+
+ROS2Visualizer::~ROS2Visualizer() {
+  stop_image_publishing = true;
+  if (image_publish_thread.joinable())
+    image_publish_thread.join();
 }
 
 void ROS2Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> parser) {
@@ -741,6 +749,9 @@ void ROS2Visualizer::publish_groundtruth() {
     if (!_sim->get_state(timestamp_inI, state_gt))
       return;
   }
+
+  if (_sim == nullptr)
+    _app->record_groundtruth(_app->get_state()->_timestamp, state_gt.segment<16>(1));
 
   // Get the GT and system state state
   const EstimatorResult estimator = _app->get_estimator_result();

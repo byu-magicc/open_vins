@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -57,6 +58,7 @@ template <typename Message> struct BagStream {
   Message next;
   bool has_next = false;
   int64_t last_timestamp = std::numeric_limits<int64_t>::min();
+  double end_time = std::numeric_limits<double>::infinity();
   std::string topic;
 
   void open(const std::string &bag_path, const std::string &topic_name, const std::string &expected_type) {
@@ -87,6 +89,16 @@ template <typename Message> struct BagStream {
     if (timestamp < last_timestamp)
       throw std::runtime_error("Header timestamps go backwards on " + topic);
     last_timestamp = timestamp;
+    if (rclcpp::Time(next.header.stamp).seconds() >= end_time)
+      has_next = false;
+  }
+
+  void restrict_interval(double start, double end) {
+    end_time = end;
+    while (has_next && rclcpp::Time(next.header.stamp).seconds() < start)
+      advance();
+    if (has_next && rclcpp::Time(next.header.stamp).seconds() >= end_time)
+      has_next = false;
   }
 };
 
@@ -114,9 +126,16 @@ int main(int argc, char **argv) {
     VioManagerOptions params;
     params.print_and_load(parser);
     params.set_results_namespace(node->get_namespace());
-    params.num_opencv_threads = 0;
-    params.use_multi_threading_pubs = false;
+    // Bag measurements are dispatched directly, without subscription workers.
     params.use_multi_threading_subs = false;
+    if (!std::isfinite(params.track_frequency) || params.track_frequency <= 0.0)
+      throw std::runtime_error("track_frequency must be finite and positive");
+    double bag_start = 0.0;
+    double bag_duration = -1.0;
+    node->get_parameter("bag_start", bag_start);
+    node->get_parameter("bag_duration", bag_duration);
+    if (!std::isfinite(bag_start) || bag_start < 0.0 || !std::isfinite(bag_duration) || (bag_duration != -1.0 && bag_duration <= 0.0))
+      throw std::runtime_error("bag_start must be finite and nonnegative; bag_duration must be positive or -1 for the full bag");
 
     std::string imu_topic = "/imu0";
     parser->parse_external("relative_config_imu", "imu0", "rostopic", imu_topic);
@@ -126,6 +145,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < params.state_options.num_cameras; ++i) {
       std::string topic = "/cam" + std::to_string(i) + "/image_raw";
       parser->parse_external("relative_config_imucam", "cam" + std::to_string(i), "rostopic", topic);
+      node->get_parameter("topic_camera" + std::to_string(i), topic);
       camera_topics.push_back(topic);
     }
     std::vector<std::string> camera_topics_override;
@@ -143,6 +163,16 @@ int main(int argc, char **argv) {
     if (!parser->successful())
       throw std::runtime_error("Unable to parse all estimator parameters");
 
+    BagStream<sensor_msgs::msg::Imu> imu;
+    imu.open(bag_path, imu_topic, "sensor_msgs/msg/Imu");
+    if (!imu.has_next)
+      throw std::runtime_error("No IMU messages on " + imu_topic);
+    const double start_time = rclcpp::Time(imu.next.header.stamp).seconds() + bag_start;
+    const double end_time = bag_duration < 0.0 ? std::numeric_limits<double>::infinity() : start_time + bag_duration;
+    // Preserve leading camera/GPS messages when replay starts at the beginning of the bag.
+    const double minimum_time = bag_start > 0.0 ? start_time : -std::numeric_limits<double>::infinity();
+    imu.restrict_interval(minimum_time, end_time);
+
     const bool use_gps = params.max_gps_init_time > 0.0;
     std::unique_ptr<BagStream<sensor_msgs::msg::NavSatFix>> gps_fix;
     std::unique_ptr<BagStream<geometry_msgs::msg::TwistWithCovarianceStamped>> gps_velocity;
@@ -155,16 +185,17 @@ int main(int argc, char **argv) {
       gps_velocity = std::make_unique<BagStream<geometry_msgs::msg::TwistWithCovarianceStamped>>();
       gps_fix->open(bag_path, fix_topic, "sensor_msgs/msg/NavSatFix");
       gps_velocity->open(bag_path, velocity_topic, "geometry_msgs/msg/TwistWithCovarianceStamped");
+      gps_fix->restrict_interval(minimum_time, end_time);
+      gps_velocity->restrict_interval(minimum_time, end_time);
       if (!gps_fix->has_next || !gps_velocity->has_next)
         throw std::runtime_error("GPS initialization requires nonempty fix and velocity topics");
     }
 
-    BagStream<sensor_msgs::msg::Imu> imu;
-    imu.open(bag_path, imu_topic, "sensor_msgs/msg/Imu");
     std::vector<std::unique_ptr<BagStream<sensor_msgs::msg::Image>>> cameras;
     for (const auto &topic : camera_topics) {
       auto camera = std::make_unique<BagStream<sensor_msgs::msg::Image>>();
       camera->open(bag_path, topic, "sensor_msgs/msg/Image");
+      camera->restrict_interval(minimum_time, end_time);
       cameras.push_back(std::move(camera));
     }
     if (!imu.has_next)
@@ -177,8 +208,12 @@ int main(int argc, char **argv) {
     auto sys = std::make_shared<VioManager>(params);
     bool visualize = false;
     node->get_parameter("visualize", visualize);
+    bool save_total_state = false;
+    node->get_parameter("save_total_state", save_total_state);
+    std::string path_gt;
+    node->get_parameter("path_gt", path_gt);
     std::shared_ptr<ROS2Visualizer> viz;
-    if (visualize)
+    if (visualize || save_total_state || !path_gt.empty())
       viz = std::make_shared<ROS2Visualizer>(node, sys);
 
     const double first_imu_time = rclcpp::Time(imu.next.header.stamp).seconds();
@@ -193,12 +228,16 @@ int main(int argc, char **argv) {
     double first_gps_applied = 0.0;
     double last_gps_applied = 0.0;
     size_t images_read = 0;
+    size_t images_throttled = 0;
     size_t stereo_images_matched = 0;
+    std::vector<double> last_camera_times(cameras.size(), -std::numeric_limits<double>::infinity());
+    const double camera_interval = 1.0 / params.track_frequency;
     using Image = sensor_msgs::msg::Image;
     using StereoPolicy = message_filters::sync_policies::ApproximateTime<Image, Image>;
     std::deque<std::pair<Image::ConstSharedPtr, Image::ConstSharedPtr>> stereo_pairs;
     std::unique_ptr<message_filters::Synchronizer<StereoPolicy>> stereo_sync;
-    if (cameras.size() == 2 && params.use_stereo) {
+    // The subscription runner synchronizes two cameras even when tracking them independently.
+    if (cameras.size() == 2) {
       stereo_sync = std::make_unique<message_filters::Synchronizer<StereoPolicy>>(StereoPolicy(10));
       auto callback = [&](Image::ConstSharedPtr left, Image::ConstSharedPtr right) {
         stereo_pairs.emplace_back(left, right);
@@ -310,6 +349,15 @@ int main(int argc, char **argv) {
         break;
       }
 
+      // Match the ROS callbacks: throttle each monocular stream, or the synchronized pair using camera 0's timestamp.
+      // Continue dispatching IMU and GPS above even when this image is dropped.
+      double &last_camera_time = last_camera_times.at(frames.front().first);
+      if (camera_time < last_camera_time + camera_interval) {
+        images_throttled += frames.size();
+        continue;
+      }
+      last_camera_time = camera_time;
+
       ov_core::CameraData data;
       data.timestamp = camera_time;
       for (const auto &frame : frames) {
@@ -332,6 +380,7 @@ int main(int argc, char **argv) {
       feed_imu();
     const double processing_time = std::chrono::duration<double>(std::chrono::steady_clock::now() - processing_start).count();
     PRINT_INFO("[BAG]: Fed %zu IMU samples and %zu images in %zu camera updates\n", imu_count, image_count, update_count);
+    PRINT_INFO("[BAG]: Dropped %zu images to enforce track_frequency %.3f Hz\n", images_throttled, params.track_frequency);
     PRINT_INFO("[BAG]: Simulated time %.3f seconds | processing time %.3f seconds\n", last_imu_time - first_imu_time, processing_time);
     if (use_gps) {
       PRINT_INFO("[GPS]: Applied %zu of %zu paired samples; %zu invalid fixes and %zu unpaired messages; first/last %.9f %.9f\n",

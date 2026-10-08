@@ -50,6 +50,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 
 #include <Eigen/Eigen>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -86,6 +87,8 @@ public:
    * @param sim Simulator if we are simulating
    */
   ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_ptr<VioManager> app, std::shared_ptr<Simulator> sim = nullptr);
+
+  ~ROS2Visualizer();
 
   /**
    * @brief Will setup ROS subscribers and callbacks
@@ -144,6 +147,9 @@ protected:
 
   /// Simulator (is nullptr if we are not sim'ing)
   std::shared_ptr<Simulator> _sim;
+
+  std::atomic<bool> stop_image_publishing{false};
+  std::thread image_publish_thread;
 
   /// Prefix for vehicle-specific TF frames when using a ROS sub-namespace
   std::string _frame_prefix;

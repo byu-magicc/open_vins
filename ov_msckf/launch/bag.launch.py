@@ -27,6 +27,8 @@ def launch_setup(context):
 
     parameters = {
         "bag_path": bag_path,
+        "bag_start": ParameterValue(LaunchConfiguration("bag_start"), value_type=float),
+        "bag_duration": ParameterValue(LaunchConfiguration("bag_duration"), value_type=float),
         "config_path": config_path,
         "verbosity": LaunchConfiguration("verbosity"),
         "filter_type": LaunchConfiguration("filter_type"),
@@ -41,18 +43,29 @@ def launch_setup(context):
         ("max_cameras", int), ("use_stereo", bool), ("topic_imu", str),
         ("max_gps_init_time", float), ("initial_global_yaw", float),
         ("topic_gps_fix", str), ("topic_gps_velocity", str),
+        ("track_frequency", float), ("num_opencv_threads", int), ("multi_threading_pubs", bool),
+        ("save_total_state", bool), ("filepath_est", str), ("filepath_std", str), ("path_gt", str),
+        ("publish_global_to_imu_tf", bool), ("publish_calibration_tf", bool),
     ):
         value = LaunchConfiguration(name).perform(context)
         if value:
-            parameters[name] = float(value) if value_type is float else ParameterValue(value, value_type=value_type)
+            parameters[name] = ParameterValue(LaunchConfiguration(name), value_type=value_type)
     camera_topics = LaunchConfiguration("camera_topics").perform(context)
     if camera_topics:
         parameters["camera_topics"] = [topic.strip() for topic in camera_topics.split(",")]
+    for index in range(2):
+        topic = LaunchConfiguration("topic_camera" + str(index)).perform(context)
+        if topic:
+            parameters["topic_camera" + str(index)] = topic
 
     def finish_bag(event, context):
         if event.returncode != 0:
             raise RuntimeError(f"run_bag failed with exit code {event.returncode}")
         return [Shutdown(reason="Bag processing finished")]
+
+    rviz_config_path = LaunchConfiguration("rviz_config_path").perform(context)
+    if not rviz_config_path:
+        rviz_config_path = os.path.join(get_package_share_directory("ov_msckf"), "launch", "display_ros2.rviz")
 
     return [
         Node(
@@ -67,8 +80,16 @@ def launch_setup(context):
             package="rviz2",
             executable="rviz2",
             condition=IfCondition(LaunchConfiguration("rviz_enable")),
+            remappings=[
+                ("/ov_msckf/" + topic,
+                 os.path.join("/", LaunchConfiguration("namespace").perform(context).strip("/"), topic))
+                for topic in [
+                    "trackhist", "loop_depth_colored", "pathimu", "pathgt",
+                    "points_msckf", "points_slam", "points_aruco", "loop_feats", "points_sim",
+                ]
+            ],
             arguments=[
-                "-d", os.path.join(get_package_share_directory("ov_msckf"), "launch", "display_ros2.rviz"),
+                "-d", rviz_config_path,
                 "--ros-args", "--log-level", "warn",
             ],
         ),
@@ -78,17 +99,30 @@ def launch_setup(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("bag_path", description="ROS 2 bag directory or file"),
+        DeclareLaunchArgument("bag_start", default_value="0.0", description="Start offset from the first IMU header timestamp (seconds)"),
+        DeclareLaunchArgument("bag_duration", default_value="-1.0", description="Replay duration in seconds; -1 processes the remaining bag"),
         DeclareLaunchArgument("namespace", default_value="ov_msckf"),
         DeclareLaunchArgument("config", default_value="euroc_mav"),
         DeclareLaunchArgument("config_path", default_value=""),
         DeclareLaunchArgument("topic_imu", default_value="", description="Override the IMU topic from the config"),
         DeclareLaunchArgument("camera_topics", default_value="", description="Comma-separated camera topics in camera ID order"),
+        DeclareLaunchArgument("topic_camera0", default_value="", description="Override camera 0 topic; camera_topics takes precedence"),
+        DeclareLaunchArgument("topic_camera1", default_value="", description="Override camera 1 topic; camera_topics takes precedence"),
         DeclareLaunchArgument("max_gps_init_time", default_value="", description="GPS assistance duration from VIO initialization (seconds)"),
         DeclareLaunchArgument("initial_global_yaw", default_value="", description="IMU heading at VIO initialization in ENU radians, counterclockwise from east"),
         DeclareLaunchArgument("topic_gps_fix", default_value="/gps/fix"),
         DeclareLaunchArgument("topic_gps_velocity", default_value="/gps/velocity"),
         DeclareLaunchArgument("max_cameras", default_value=""),
         DeclareLaunchArgument("use_stereo", default_value=""),
+        DeclareLaunchArgument("track_frequency", default_value="", description="Maximum camera tracking rate per stream (Hz)"),
+        DeclareLaunchArgument("num_opencv_threads", default_value="", description="Override OpenCV worker count from the config"),
+        DeclareLaunchArgument("multi_threading_pubs", default_value="", description="Publish tracking images in a background thread"),
+        DeclareLaunchArgument("save_total_state", default_value="", description="Save legacy state and deviation files, including without RViz"),
+        DeclareLaunchArgument("filepath_est", default_value=""),
+        DeclareLaunchArgument("filepath_std", default_value=""),
+        DeclareLaunchArgument("path_gt", default_value="", description="ASL-format ground-truth CSV for evaluation"),
+        DeclareLaunchArgument("publish_global_to_imu_tf", default_value=""),
+        DeclareLaunchArgument("publish_calibration_tf", default_value=""),
         DeclareLaunchArgument("verbosity", default_value="INFO"),
         DeclareLaunchArgument(
             "filter_type", default_value="openvins", description="estimator to expose: openvins, factor_graph, or hybrid",
@@ -105,5 +139,6 @@ def generate_launch_description():
         DeclareLaunchArgument("save_results", default_value="false"),
         DeclareLaunchArgument("results_path", default_value="results"),
         DeclareLaunchArgument("rviz_enable", default_value="false"),
+        DeclareLaunchArgument("rviz_config_path", default_value=""),
         OpaqueFunction(function=launch_setup),
     ])
