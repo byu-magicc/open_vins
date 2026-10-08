@@ -1,6 +1,6 @@
 %YAML:1.0
 
-max_gps_init_time: 30.0
+max_gps_init_time: 10.0
 initial_global_yaw: 1.5707963267948966  # IMU heading at VIO initialization: north in ENU.
 
 verbosity: "INFO"
@@ -17,8 +17,8 @@ calib_cam_timeoffset: false
 calib_imu_intrinsics: false
 calib_imu_g_sensitivity: false
 
-max_clones: 30
-max_slam: 50
+max_clones: 20
+max_slam: 0
 max_slam_in_update: 25
 max_msckf_in_update: 10
 dt_slam_delay: 2
@@ -73,7 +73,7 @@ grid_x: 20
 grid_y: 20
 min_px_dist: 15
 knn_ratio: 0.70
-track_frequency: 31.0
+track_frequency: 11.0
 downsample_cameras: false
 num_opencv_threads: 4
 histogram_method: "HISTOGRAM"
@@ -89,9 +89,9 @@ up_slam_chi2_multipler: 1
 up_aruco_sigma_px: 1
 up_aruco_chi2_multipler: 1
 
-fi_max_dist: 1000.0            # Maximum landmark depth along the anchor camera's optical axis (m).
-fi_max_baseline: 150.0         # Maximum landmark range / transverse camera baseline (dimensionless).
-fi_max_cond_number: 1000000.0  # Maximum linear triangulation matrix condition number.
+fi_max_dist: 500.0           # Maximum landmark depth along the anchor camera's optical axis (m).
+fi_max_baseline: 40.0        # Maximum landmark range / transverse camera baseline (dimensionless).
+fi_max_cond_number: 10000.0  # Maximum linear triangulation matrix condition number.
 
 use_mask: false
 
