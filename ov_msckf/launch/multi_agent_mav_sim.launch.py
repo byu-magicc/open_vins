@@ -9,6 +9,7 @@ from launch.actions import (
     IncludeLaunchDescription,
     OpaqueFunction,
     RegisterEventHandler,
+    SetLaunchConfiguration,
 )
 from launch.conditions import IfCondition
 from launch.event_handlers import OnShutdown
@@ -83,61 +84,18 @@ def launch_setup(context):
             RegisterEventHandler(OnShutdown(on_shutdown=remove_rviz_config))
         )
 
-    actions.append(
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(
-                    get_package_share_directory("ov_msckf"),
-                    "launch",
-                    "simulation.launch.py",
-                )
-            ),
-            launch_arguments={
-                "simulation_executable": "run_multi_agent_simulation",
-                "namespace": namespace,
-                "rviz_enable": LaunchConfiguration("rviz_enable"),
-                "rviz_config_path": rviz_config_path,
-                "agent_names": LaunchConfiguration("agent_names"),
-                "datasets": LaunchConfiguration("datasets"),
-                "config": "magicc_fixedwing_sim",
-                "max_cameras": "1",
-                "use_stereo": "false",
-                "filter_type": LaunchConfiguration("filter_type"),
-                "range_stddev": LaunchConfiguration("range_stddev"),
-                "range_interval": LaunchConfiguration("range_interval"),
-                "range_jitter_fraction": LaunchConfiguration("range_jitter_fraction"),
-                "seed": LaunchConfiguration("seed"),
-                "relinearize_skip": LaunchConfiguration("relinearize_skip"),
-                "relinearize_threshold": LaunchConfiguration(
-                    "relinearize_threshold"
-                ),
-                "use_qr": LaunchConfiguration("use_qr"),
-                "save_results": LaunchConfiguration("save_results"),
-                "results_path": LaunchConfiguration("results_path"),
-                "use_ground_plane_features": "true",
-                "ground_plane_features_range": "2.0",
-                "dosave_state": "false",
-            }.items(),
-        )
-    )
+    actions.append(SetLaunchConfiguration("rviz_config_path", rviz_config_path))
     return actions
 
 
 def generate_launch_description():
     return LaunchDescription(
         [
+            # These are needed by launch_setup before the included declarations run.
             DeclareLaunchArgument("agent_names", default_value="center,left,right"),
-            DeclareLaunchArgument("filter_type", default_value="openvins"),
-            DeclareLaunchArgument("range_stddev", default_value="1.0"),
+            DeclareLaunchArgument("rviz_enable", default_value="false"),
             DeclareLaunchArgument("range_interval", default_value="45.0"),
             DeclareLaunchArgument("range_jitter_fraction", default_value="0.4"),
-            DeclareLaunchArgument("seed", default_value="5"),
-            DeclareLaunchArgument("rviz_enable", default_value="false"),
-            DeclareLaunchArgument("save_results", default_value="false"),
-            DeclareLaunchArgument("results_path", default_value="results"),
-            DeclareLaunchArgument("relinearize_skip", default_value="10"),
-            DeclareLaunchArgument("relinearize_threshold", default_value="0.1"),
-            DeclareLaunchArgument("use_qr", default_value="false"),
             DeclareLaunchArgument(
                 "datasets",
                 default_value="gazebo_sinusoid/center_trajectory.txt,"
@@ -145,5 +103,19 @@ def generate_launch_description():
                 "gazebo_sinusoid/right_trajectory.txt",
             ),
             OpaqueFunction(function=launch_setup),
+            # Shared arguments are declared by simulation.launch.py and inherit CLI overrides.
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(os.path.join(os.path.dirname(__file__), "simulation.launch.py")),
+                launch_arguments={
+                    "simulation_executable": "run_multi_agent_simulation",
+                    "namespace": "multi_agent",
+                    "config": "magicc_fixedwing_sim",
+                    "max_cameras": "1",
+                    "use_stereo": "false",
+                    "use_ground_plane_features": "true",
+                    "ground_plane_features_range": "2.0",
+                    "dosave_state": "false",
+                }.items(),
+            ),
         ]
     )
