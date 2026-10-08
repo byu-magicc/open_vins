@@ -298,6 +298,11 @@ FactorGraphState::Frame &FactorGraphState::ensure_frame(double timestamp) {
     throw std::runtime_error("Cannot insert a factor-graph pose behind the latest materialized pose");
 
   const Frame previous = frames.rbegin()->second;
+  if (timestamp - previous.timestamp < 1e-4) {
+    // Retain the measurement timestamp for track/reset lookup, but keep the
+    // navigation state's original time so repeated aliases cannot postpone propagation.
+    return frames.emplace(timestamp, previous).first->second;
+  }
   const gtsam::Values values = current_values();
   const auto previous_pose = values.at<gtsam::Pose3>(previous.pose_key);
   const auto previous_velocity = values.at<gtsam::Vector3>(previous.velocity_key);
@@ -559,7 +564,8 @@ FactorGraphResult FactorGraphState::get_estimate(double timestamp) {
   Eigen::MatrixXd propagation_mapping = Eigen::Matrix<double, 15, 15>::Identity();
   Eigen::Matrix<double, 15, 15> propagation_covariance = Eigen::Matrix<double, 15, 15>::Zero();
 
-  if (timestamp > frame.timestamp) {
+  // A materialized timestamp alias reports the reused state without propagation.
+  if (timestamp > frames.rbegin()->first) {
     const gtsam::Key propagated_pose_key = pose_key(next_frame_index);
     const gtsam::Key propagated_velocity_key = velocity_key(next_frame_index);
     const gtsam::Key propagated_bias_key = bias_key(next_frame_index);
