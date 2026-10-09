@@ -7,7 +7,7 @@ workspace_directory=$(cd -- "${repository_directory}/../.." && pwd)
 bags_directory="${workspace_directory}/data/holoocean"
 bag_names=(center_2 left_2 right_2)
 # Seconds from the first /imu/data header. Remove an entry to use normal initialization.
-declare -A bag_start_times=([center_2]=30.0 [left_2]=30.0 [right_2]=30.0)
+declare -A bag_start_times=([center_2]=9.0 [left_2]=12.0 [right_2]=11.0)
 filter_type=factor_graph
 plotter_python="${PLOTTER_PYTHON:-${workspace_directory}/.venv-plotters/bin/python}"
 if [[ ! -x "${plotter_python}" && -z "${PLOTTER_PYTHON:-}" ]]; then
