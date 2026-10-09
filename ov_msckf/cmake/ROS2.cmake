@@ -126,10 +126,15 @@ ament_target_dependencies(test_factor_graph_distributed ${ament_libraries})
 target_link_libraries(test_factor_graph_distributed ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS test_factor_graph_distributed DESTINATION lib/${PROJECT_NAME})
 
-add_executable(test_gps_init src/test_gps_init.cpp)
-ament_target_dependencies(test_gps_init ${ament_libraries})
-target_link_libraries(test_gps_init ov_msckf_lib ${thirdparty_libraries})
-install(TARGETS test_gps_init DESTINATION lib/${PROJECT_NAME})
+add_executable(test_gt_init src/test_gt_init.cpp)
+ament_target_dependencies(test_gt_init ${ament_libraries})
+target_link_libraries(test_gt_init ov_msckf_lib ${thirdparty_libraries})
+install(TARGETS test_gt_init DESTINATION lib/${PROJECT_NAME})
+
+add_executable(test_gps_update src/test_gps_update.cpp)
+ament_target_dependencies(test_gps_update ${ament_libraries})
+target_link_libraries(test_gps_update ov_msckf_lib ${thirdparty_libraries})
+install(TARGETS test_gps_update DESTINATION lib/${PROJECT_NAME})
 
 add_executable(test_sim_repeat src/test_sim_repeat.cpp)
 ament_target_dependencies(test_sim_repeat ${ament_libraries})
@@ -137,6 +142,8 @@ target_link_libraries(test_sim_repeat ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS test_sim_repeat DESTINATION lib/${PROJECT_NAME})
 
 # Install launch and config directories
+install(FILES ../plotters/holoocean_truth.py DESTINATION share/${PROJECT_NAME}/scripts/)
+
 install(DIRECTORY launch/ DESTINATION share/${PROJECT_NAME}/launch/)
 install(DIRECTORY ../config/ DESTINATION share/${PROJECT_NAME}/config/)
 

@@ -70,16 +70,13 @@ void check_global_update(bool use_qr) {
   gps.velocity << 2, -1, 0.5;
   gps.cov_position << 2, 0.3, 0.1, 0.3, 3, -0.2, 0.1, -0.2, 4;
   gps.cov_velocity << 0.4, 0.05, 0.01, 0.05, 0.6, -0.03, 0.01, -0.03, 0.8;
-  UpdaterGlobal updater(0.2);
-  updater.set_initial_attitude(rotation);
+  UpdaterGlobal updater;
   const auto observation = updater.update(state, gps);
-  const Eigen::Matrix3d enu_rotation = Eigen::AngleAxisd(0.4, Eigen::Vector3d::UnitZ()).toRotationMatrix();
   check(observation.timestamp == state->_timestamp, "GPS observation did not use the camera clock");
   check((observation.position - initial_state.segment<3>(4)).norm() < 1e-12, "First GPS fix did not anchor at the propagated position");
-  check((observation.velocity - enu_rotation * gps.velocity).norm() < 1e-12, "GPS velocity yaw alignment is incorrect");
-  check((observation.cov_position - enu_rotation * gps.cov_position * enu_rotation.transpose()).norm() < 1e-12 &&
-            (observation.cov_velocity - enu_rotation * gps.cov_velocity * enu_rotation.transpose()).norm() < 1e-12,
-        "GPS covariance rotation is incorrect");
+  check((observation.velocity - gps.velocity).norm() < 1e-12, "GPS velocity is not in the ENU world frame");
+  check((observation.cov_position - gps.cov_position).norm() < 1e-12 && (observation.cov_velocity - gps.cov_velocity).norm() < 1e-12,
+        "GPS covariance is not in the ENU world frame");
   graph.add_gps_factors(observation);
   const auto posterior = graph.get_estimate(state->_timestamp);
   check(posterior.valid && (posterior.imu_state - state->_imu->value()).norm() < 1e-8, "Graph GPS posterior disagrees with the EKF update");
@@ -91,8 +88,7 @@ void check_global_update(bool use_qr) {
   gps.lla(1) -= 0.00002;
   gps.lla(2) += 0.3;
   const Eigen::Vector3d expected_position =
-      initial_state.segment<3>(4) +
-      enu_rotation * ov_core::ecef_to_enu(Eigen::Vector3d(40.2463724, -111.6474138, 1387)) *
+      initial_state.segment<3>(4) + ov_core::ecef_to_enu(Eigen::Vector3d(40.2463724, -111.6474138, 1387)) *
           (ov_core::lla_to_ecef(gps.lla) - ov_core::lla_to_ecef(Eigen::Vector3d(40.2463724, -111.6474138, 1387)));
   check((updater.update(state, gps).position - expected_position).norm() < 1e-9, "GPS origin changed after the first accepted fix");
 
@@ -131,7 +127,6 @@ void check_manager(const std::string &config_path, VioManagerOptions::FilterType
   options.use_multi_threading_subs = false;
   options.use_multi_threading_pubs = false;
   options.num_opencv_threads = 0;
-  options.max_gps_init_time = 0.2;
   ov_core::GPSData gps;
   gps.timestamp = 1 + options.calib_camimu_dt;
   gps.lla << 40, -111, 1000;
@@ -153,7 +148,7 @@ void check_manager(const std::string &config_path, VioManagerOptions::FilterType
   }
   auto invalid = gps;
   invalid.timestamp -= 0.01;
-  check(!manager.feed_measurement_gps(invalid), "GPS applied before the initialization window");
+  check(!manager.feed_measurement_gps(invalid), "Stale GPS measurement was accepted");
   invalid = gps;
   invalid.lla(0) = 91;
   check(!manager.feed_measurement_gps(invalid), "Invalid latitude was accepted");
@@ -169,7 +164,7 @@ void check_manager(const std::string &config_path, VioManagerOptions::FilterType
   invalid = gps;
   invalid.cov_velocity(0, 1) = 0.2;
   check(!manager.feed_measurement_gps(invalid), "Asymmetric GPS covariance was accepted");
-  check(manager.feed_measurement_gps(gps), "GPS rejected at the initialization window start");
+  check(manager.feed_measurement_gps(gps), "GPS rejected at the current state time");
   check(!manager.feed_measurement_gps(gps), "Duplicate GPS timestamp was accepted");
   gps.timestamp = 1.05 + options.calib_camimu_dt;
   check(manager.feed_measurement_gps(gps), "First GPS sample between cameras was rejected");
@@ -182,24 +177,22 @@ void check_manager(const std::string &config_path, VioManagerOptions::FilterType
   gps.timestamp = 1.09 + options.calib_camimu_dt;
   check(!manager.feed_measurement_gps(gps), "Out-of-order GPS sample was accepted");
   gps.timestamp = 1.2 + options.calib_camimu_dt;
-  check(!manager.feed_measurement_gps(gps), "GPS applied at the exclusive cutoff");
+  check(manager.feed_measurement_gps(gps), "GPS rejected at 0.2 seconds after startup");
   gps.timestamp += 0.01;
-  check(!manager.feed_measurement_gps(gps), "GPS applied after the cutoff");
+  check(manager.feed_measurement_gps(gps), "GPS rejected at 0.21 seconds after startup");
   manager.feed_measurement_simulation(1.25, {0}, {{}});
-  check(manager.get_estimator_result().valid, "Camera updates failed after the GPS cutoff");
+  check(manager.get_estimator_result().valid, "Camera updates failed after GPS measurements");
+  gps.timestamp = 2.0 + options.calib_camimu_dt;
+  check(manager.feed_measurement_gps(gps), "GPS rejected one second after startup");
+  manager.feed_measurement_simulation(2.05, {0}, {{}});
+  check(manager.get_estimator_result().valid, "Camera updates failed after a later GPS measurement");
   check(manager.successful_resets() == 0 && manager.skipped_resets() == 0, "GPS triggered a hybrid reset");
-
-  options.max_gps_init_time = 0;
-  VioManager disabled(options);
-  disabled.initialize_with_gt(initial);
-  gps.timestamp = 1 + options.calib_camimu_dt;
-  check(!disabled.feed_measurement_gps(gps), "Disabled GPS assistance applied a measurement");
 }
 
 int main(int argc, char **argv) {
   try {
     if (argc != 2)
-      throw std::invalid_argument("Usage: test_gps_init <HoloOcean estimator_config.yaml>");
+      throw std::invalid_argument("Usage: test_gps_update <HoloOcean estimator_config.yaml>");
     ov_core::Printer::setPrintLevel("WARNING");
     for (bool use_qr : {false, true}) {
       check_global_update(use_qr);
@@ -207,7 +200,7 @@ int main(int argc, char **argv) {
            {VioManagerOptions::FilterType::OPENVINS, VioManagerOptions::FilterType::FACTOR_GRAPH, VioManagerOptions::FilterType::HYBRID})
         check_manager(argv[1], mode, use_qr);
     }
-    std::cout << "GPS initialization checks passed (all estimators, Cholesky and QR)\n";
+    std::cout << "GPS measurement update checks passed (all estimators, Cholesky and QR)\n";
     return EXIT_SUCCESS;
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

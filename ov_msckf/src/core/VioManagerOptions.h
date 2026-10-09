@@ -79,12 +79,6 @@ struct VioManagerOptions {
   /// Delay, in seconds, that we should wait from init before we start estimating SLAM features
   double dt_slam_delay = 2.0;
 
-  /// GPS assistance duration after accepted VIO initialization (seconds); zero disables it.
-  double max_gps_init_time = 0.0;
-
-  /// IMU heading at accepted VIO initialization, in local ENU radians counterclockwise from east.
-  double initial_global_yaw = 0.0;
-
   /// If we should try to use zero velocity update
   bool try_zupt = false;
 
@@ -157,10 +151,6 @@ struct VioManagerOptions {
     init_options.print_and_load(parser);
     if (parser != nullptr) {
       parser->parse_config("dt_slam_delay", dt_slam_delay);
-      parser->parse_config("max_gps_init_time", max_gps_init_time, false);
-      parser->parse_config("initial_global_yaw", initial_global_yaw, false);
-      if (!std::isfinite(max_gps_init_time) || max_gps_init_time < 0.0 || !std::isfinite(initial_global_yaw))
-        throw std::invalid_argument("max_gps_init_time must be finite and nonnegative; initial_global_yaw must be finite");
       parser->parse_config("try_zupt", try_zupt);
       parser->parse_config("zupt_max_velocity", zupt_max_velocity);
       parser->parse_config("zupt_noise_multiplier", zupt_noise_multiplier);
@@ -185,8 +175,6 @@ struct VioManagerOptions {
       parser->parse_config("record_timing_filepath", record_timing_filepath);
     }
     PRINT_DEBUG("  - dt_slam_delay: %.1f\n", dt_slam_delay);
-    PRINT_DEBUG("  - max_gps_init_time: %.3f seconds\n", max_gps_init_time);
-    PRINT_DEBUG("  - initial_global_yaw: %.6f radians (ENU)\n", initial_global_yaw);
     PRINT_DEBUG("  - zero_velocity_update: %d\n", try_zupt);
     PRINT_DEBUG("  - zupt_max_velocity: %.2f\n", zupt_max_velocity);
     PRINT_DEBUG("  - zupt_noise_multiplier: %.2f\n", zupt_noise_multiplier);

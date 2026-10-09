@@ -353,7 +353,7 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   // Make the updater!
   updaterMSCKF = std::make_shared<UpdaterMSCKF>(params.msckf_options, params.featinit_options);
   updaterSLAM = std::make_shared<UpdaterSLAM>(params.slam_options, params.aruco_options, params.featinit_options);
-  updaterGlobal = std::make_shared<UpdaterGlobal>(params.initial_global_yaw);
+  updaterGlobal = std::make_shared<UpdaterGlobal>();
 
   // If we are using zero velocity updates, then create the updater
   if (params.try_zupt) {
@@ -395,8 +395,7 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
 
 bool VioManager::feed_measurement_gps(const ov_core::GPSData &message) {
   const double timestamp = message.timestamp - state->_calib_dt_CAMtoIMU->value()(0);
-  if (!is_initialized_vio || params.max_gps_init_time == 0.0 || timestamp < startup_time ||
-      timestamp >= startup_time + params.max_gps_init_time || timestamp < state->_timestamp || message.timestamp <= last_gps_time)
+  if (!is_initialized_vio || timestamp < state->_timestamp || message.timestamp <= last_gps_time)
     return false;
   if (!std::isfinite(message.timestamp) || !message.lla.allFinite() || std::abs(message.lla(0)) > 90.0 ||
       std::abs(message.lla(1)) > 180.0 || !message.velocity.allFinite() || !message.cov_position.allFinite() ||

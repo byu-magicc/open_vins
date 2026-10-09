@@ -7,24 +7,16 @@
 
 using namespace ov_msckf;
 
-UpdaterGlobal::UpdaterGlobal(double initial_global_yaw) : initial_global_yaw(initial_global_yaw) {}
-
-void UpdaterGlobal::set_initial_attitude(const Eigen::Matrix3d &R_GtoI) {
-  const Eigen::Matrix3d R_ItoG = R_GtoI.transpose();
-  yaw_enu_to_global = std::atan2(R_ItoG(1, 0), R_ItoG(0, 0)) - initial_global_yaw;
-  aligned = false;
-}
-
 ov_core::GPSGlobalData UpdaterGlobal::update(std::shared_ptr<State> state, const ov_core::GPSData &message) {
   const Eigen::Vector3d position_ecef = ov_core::lla_to_ecef(message.lla);
   const Eigen::Matrix3d R_ecef_to_enu = ov_core::ecef_to_enu(message.lla);
   if (!aligned) {
-    R_ecef_to_global = Eigen::AngleAxisd(yaw_enu_to_global, Eigen::Vector3d::UnitZ()).toRotationMatrix() * R_ecef_to_enu;
+    R_ecef_to_global = R_ecef_to_enu;
     origin_ecef = position_ecef;
     origin_global = state->_imu->pos();
     aligned = true;
-    PRINT_INFO("[GPS]: Anchored at %.9f, position %.6f %.6f %.6f, ENU-to-global yaw %.6f rad\n", message.timestamp, origin_global(0),
-               origin_global(1), origin_global(2), yaw_enu_to_global);
+    PRINT_INFO("[GPS]: Anchored at %.9f, position %.6f %.6f %.6f\n", message.timestamp, origin_global(0), origin_global(1),
+               origin_global(2));
   }
   const Eigen::Matrix3d R_enu_to_global = R_ecef_to_global * R_ecef_to_enu.transpose();
   const Eigen::Vector3d position = origin_global + R_ecef_to_global * (position_ecef - origin_ecef);

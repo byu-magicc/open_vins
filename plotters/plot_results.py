@@ -8,7 +8,8 @@ The results directory may either be one agent directory, or a directory whose
 immediate children are agent directories. Each agent directory must contain
 ``estimate.csv`` and ``groundtruth.csv`` as written with ``save_results:=true``.
 With ``--truth-bag BAG_DIRECTORY``, one agent is compared against the bagged
-HoloOcean ``/sim/truth_state`` instead, with initial position/yaw alignment.
+HoloOcean ``/sim/truth_state`` instead, comparing global coordinates without
+fitting position or yaw.
 If present, the fleet-level ``ranges.csv`` supplies range-event annotations.
 The script writes the same three SVG plots and NPZ data archive as the former
 ROS plotter into the output directory.
@@ -48,7 +49,7 @@ def load_csv(path, required_columns):
 
 
 class DataPlotter:
-    def __init__(self, results_directory, output_directory, truth_bag=None):
+    def __init__(self, results_directory, output_directory, truth_bag, camera_imu_offset):
         self.output_directory = output_directory
         if truth_bag is None:
             enu_to_ned = R.from_matrix([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
@@ -90,7 +91,7 @@ class DataPlotter:
         for directory in agent_directories:
             estimate = load_csv(directory / 'estimate.csv', estimator_columns)
             if truth_bag is not None:
-                truth, estimate = load_bag_reference(truth_bag, estimate)
+                truth, estimate = load_bag_reference(truth_bag, estimate, camera_imu_offset)
                 timestamps = estimate['timestamp']
             else:
                 truth = load_csv(directory / 'groundtruth.csv', state_columns)
@@ -345,9 +346,10 @@ def main():
     parser.add_argument('results_directory', type=Path)
     parser.add_argument('output_directory', type=Path)
     parser.add_argument('--truth-bag', type=Path, help='HoloOcean bag directory containing /sim/truth_state')
+    parser.add_argument('--camera-imu-offset', type=float, default=0.0, help='IMU timestamp minus camera timestamp (seconds)')
     args = parser.parse_args()
     try:
-        DataPlotter(args.results_directory, args.output_directory, args.truth_bag).plot_data()
+        DataPlotter(args.results_directory, args.output_directory, args.truth_bag, args.camera_imu_offset).plot_data()
     except (ValueError, OSError) as error:
         parser.exit(1, f'Error: {error}\n')
 

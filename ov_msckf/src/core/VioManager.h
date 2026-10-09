@@ -95,7 +95,7 @@ public:
   /**
    * @brief Feed function for a GPS measurement
    * @param message Contains an IMU-clock timestamp, WGS84 fix, local ENU velocity, and covariances
-   * @return True if the measurement was applied within the GPS initialization window
+   * @return True if the measurement was applied to the initialized estimator
    */
   bool feed_measurement_gps(const ov_core::GPSData &message);
 

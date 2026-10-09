@@ -33,7 +33,6 @@
 #include "state/Propagator.h"
 #include "state/State.h"
 #include "state/StateHelper.h"
-#include "update/UpdaterGlobal.h"
 
 using namespace ov_core;
 using namespace ov_type;
@@ -51,13 +50,12 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   Eigen::MatrixXd Cov = std::pow(0.02, 2) * Eigen::MatrixXd::Identity(state->_imu->size(), state->_imu->size());
   Cov.block(0, 0, 3, 3) = std::pow(0.017, 2) * Eigen::Matrix3d::Identity(); // q
   Cov.block(3, 3, 3, 3) = std::pow(0.05, 2) * Eigen::Matrix3d::Identity();  // p
-  Cov.block(6, 6, 3, 3) = std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v (static)
+  Cov.block(6, 6, 3, 3) = std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v
   StateHelper::set_initial_covariance(state, Cov, order);
 
   // Set the state time
   state->_timestamp = imustate(0, 0);
   startup_time = imustate(0, 0);
-  updaterGlobal->set_initial_attitude(state->_imu->Rot());
   is_initialized_vio = true;
 
   // Seed the passive graph with the same initialized navigation value and uncertainty
@@ -67,12 +65,14 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
 
   // Cleanup any features older then the initialization time
   trackFEATS->get_feature_database()->cleanup_measurements(state->_timestamp);
+  trackFEATS->set_num_features(std::floor((double)params.num_pts / (double)params.state_options.num_cameras));
+  has_moved_since_zupt = state->_imu->vel().norm() > params.zupt_max_velocity;
   if (trackARUCO != nullptr) {
     trackARUCO->get_feature_database()->cleanup_measurements(state->_timestamp);
   }
 
   // Print what we init'ed with
-  PRINT_DEBUG(GREEN "[INIT]: INITIALIZED FROM GROUNDTRUTH FILE!!!!!\n" RESET);
+  PRINT_DEBUG(GREEN "[INIT]: INITIALIZED FROM SUPPLIED GROUND TRUTH\n" RESET);
   PRINT_DEBUG(GREEN "[INIT]: orientation = %.4f, %.4f, %.4f, %.4f\n" RESET, state->_imu->quat()(0), state->_imu->quat()(1),
               state->_imu->quat()(2), state->_imu->quat()(3));
   PRINT_DEBUG(GREEN "[INIT]: bias gyro = %.4f, %.4f, %.4f\n" RESET, state->_imu->bias_g()(0), state->_imu->bias_g()(1),
@@ -124,7 +124,6 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       // Set the state time
       state->_timestamp = timestamp;
       startup_time = timestamp;
-      updaterGlobal->set_initial_attitude(state->_imu->Rot());
 
       // Seed the passive graph only after OpenVINS has accepted the initialization result
       if (factorGraphManager != nullptr) {

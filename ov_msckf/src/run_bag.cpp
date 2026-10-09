@@ -32,7 +32,6 @@
 #include <vector>
 
 #include <cv_bridge/cv_bridge.hpp>
-#include <geometry_msgs/msg/twist_with_covariance_stamped.hpp>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/synchronizer.h>
 #include <rclcpp/rclcpp.hpp>
@@ -40,7 +39,6 @@
 #include <sensor_msgs/image_encodings.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
-#include <sensor_msgs/msg/nav_sat_fix.hpp>
 
 #include "core/VioManager.h"
 #include "ros/ROS2Visualizer.h"
@@ -125,6 +123,16 @@ int main(int argc, char **argv) {
 
     VioManagerOptions params;
     params.print_and_load(parser);
+    std::vector<double> initial_state_imu;
+    const bool truth_initialized = node->get_parameter("initial_state_imu", initial_state_imu);
+    if (truth_initialized) {
+      if (initial_state_imu.size() != 17 ||
+          !std::all_of(initial_state_imu.begin(), initial_state_imu.end(), [](double value) { return std::isfinite(value); }))
+        throw std::runtime_error("initial_state_imu must contain 17 finite values");
+      const Eigen::Map<const Eigen::Vector4d> quaternion(initial_state_imu.data() + 1);
+      if (std::abs(quaternion.norm() - 1.0) > 1e-6)
+        throw std::runtime_error("initial_state_imu quaternion must have unit norm");
+    }
     params.set_results_namespace(node->get_namespace());
     // Bag measurements are dispatched directly, without subscription workers.
     params.use_multi_threading_subs = false;
@@ -169,33 +177,28 @@ int main(int argc, char **argv) {
       throw std::runtime_error("No IMU messages on " + imu_topic);
     const double start_time = rclcpp::Time(imu.next.header.stamp).seconds() + bag_start;
     const double end_time = bag_duration < 0.0 ? std::numeric_limits<double>::infinity() : start_time + bag_duration;
-    // Preserve leading camera/GPS messages when replay starts at the beginning of the bag.
+    // Preserve leading camera messages when replay starts at the beginning of the bag.
     const double minimum_time = bag_start > 0.0 ? start_time : -std::numeric_limits<double>::infinity();
-    imu.restrict_interval(minimum_time, end_time);
-
-    const bool use_gps = params.max_gps_init_time > 0.0;
-    std::unique_ptr<BagStream<sensor_msgs::msg::NavSatFix>> gps_fix;
-    std::unique_ptr<BagStream<geometry_msgs::msg::TwistWithCovarianceStamped>> gps_velocity;
-    if (use_gps) {
-      std::string fix_topic = "/gps/fix";
-      std::string velocity_topic = "/gps/velocity";
-      node->get_parameter("topic_gps_fix", fix_topic);
-      node->get_parameter("topic_gps_velocity", velocity_topic);
-      gps_fix = std::make_unique<BagStream<sensor_msgs::msg::NavSatFix>>();
-      gps_velocity = std::make_unique<BagStream<geometry_msgs::msg::TwistWithCovarianceStamped>>();
-      gps_fix->open(bag_path, fix_topic, "sensor_msgs/msg/NavSatFix");
-      gps_velocity->open(bag_path, velocity_topic, "geometry_msgs/msg/TwistWithCovarianceStamped");
-      gps_fix->restrict_interval(minimum_time, end_time);
-      gps_velocity->restrict_interval(minimum_time, end_time);
-      if (!gps_fix->has_next || !gps_velocity->has_next)
-        throw std::runtime_error("GPS initialization requires nonempty fix and velocity topics");
+    sensor_msgs::msg::Imu leading_imu;
+    bool have_leading_imu = false;
+    if (truth_initialized) {
+      if (std::abs(initial_state_imu[0] - start_time) > 1e-6)
+        throw std::runtime_error("initial_state_imu timestamp must match the first IMU timestamp plus bag_start");
+      // Retain the last sample before startup so propagation can interpolate at startup.
+      while (imu.has_next && rclcpp::Time(imu.next.header.stamp).seconds() < start_time) {
+        leading_imu = std::move(imu.next);
+        have_leading_imu = true;
+        imu.advance();
+      }
     }
+    imu.restrict_interval(minimum_time, end_time);
 
     std::vector<std::unique_ptr<BagStream<sensor_msgs::msg::Image>>> cameras;
     for (const auto &topic : camera_topics) {
       auto camera = std::make_unique<BagStream<sensor_msgs::msg::Image>>();
       camera->open(bag_path, topic, "sensor_msgs/msg/Image");
-      camera->restrict_interval(minimum_time, end_time);
+      const double camera_start = truth_initialized ? start_time - params.calib_camimu_dt : minimum_time;
+      camera->restrict_interval(camera_start, end_time);
       cameras.push_back(std::move(camera));
     }
     if (!imu.has_next)
@@ -206,6 +209,15 @@ int main(int argc, char **argv) {
     }
 
     auto sys = std::make_shared<VioManager>(params);
+    if (truth_initialized) {
+      Eigen::Matrix<double, 17, 1> initial = Eigen::Map<const Eigen::Matrix<double, 17, 1>>(initial_state_imu.data());
+      initial(0) -= params.calib_camimu_dt;
+      sys->initialize_with_gt(initial);
+      PRINT_INFO("[BAG]: Truth initialization offset %.9f, IMU %.9f, camera %.9f\n", bag_start, initial_state_imu[0],
+                 initial(0));
+      PRINT_INFO("[BAG]: Global initial position %.9f %.9f %.9f, velocity %.9f %.9f %.9f\n", initial(5), initial(6), initial(7), initial(8),
+                 initial(9), initial(10));
+    }
     bool visualize = false;
     node->get_parameter("visualize", visualize);
     bool save_total_state = false;
@@ -216,17 +228,11 @@ int main(int argc, char **argv) {
     if (visualize || save_total_state || !path_gt.empty())
       viz = std::make_shared<ROS2Visualizer>(node, sys);
 
-    const double first_imu_time = rclcpp::Time(imu.next.header.stamp).seconds();
+    const double first_imu_time = truth_initialized ? start_time : rclcpp::Time(imu.next.header.stamp).seconds();
     double last_imu_time = -std::numeric_limits<double>::infinity();
     size_t imu_count = 0;
     size_t image_count = 0;
     size_t update_count = 0;
-    size_t gps_pairs = 0;
-    size_t gps_applied = 0;
-    size_t gps_unpaired = 0;
-    size_t gps_invalid = 0;
-    double first_gps_applied = 0.0;
-    double last_gps_applied = 0.0;
     size_t images_read = 0;
     size_t images_throttled = 0;
     size_t stereo_images_matched = 0;
@@ -245,18 +251,23 @@ int main(int argc, char **argv) {
       };
       stereo_sync->registerCallback(std::bind(callback, std::placeholders::_1, std::placeholders::_2));
     }
-    auto feed_imu = [&] {
+    auto feed_imu_message = [&](const sensor_msgs::msg::Imu &message) {
       ov_core::ImuData data;
-      data.timestamp = rclcpp::Time(imu.next.header.stamp).seconds();
-      data.wm << imu.next.angular_velocity.x, imu.next.angular_velocity.y, imu.next.angular_velocity.z;
-      data.am << imu.next.linear_acceleration.x, imu.next.linear_acceleration.y, imu.next.linear_acceleration.z;
+      data.timestamp = rclcpp::Time(message.header.stamp).seconds();
+      data.wm << message.angular_velocity.x, message.angular_velocity.y, message.angular_velocity.z;
+      data.am << message.linear_acceleration.x, message.linear_acceleration.y, message.linear_acceleration.z;
       sys->feed_measurement_imu(data);
       last_imu_time = data.timestamp;
       ++imu_count;
       if (viz)
         viz->visualize_odometry(data.timestamp);
+    };
+    auto feed_imu = [&] {
+      feed_imu_message(imu.next);
       imu.advance();
     };
+    if (have_leading_imu)
+      feed_imu_message(leading_imu);
     const auto processing_start = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
       std::vector<std::pair<int, Image::ConstSharedPtr>> frames;
@@ -291,57 +302,6 @@ int main(int argc, char **argv) {
 
       const double camera_time = rclcpp::Time(frames.front().second->header.stamp).seconds();
       const double required_imu_time = camera_time + sys->get_state()->_calib_dt_CAMtoIMU->value()(0);
-      // GPS headers share the IMU clock. Apply matched samples before the next camera update.
-      while (gps_fix && gps_fix->has_next && gps_velocity->has_next) {
-        const int64_t fix_stamp = rclcpp::Time(gps_fix->next.header.stamp).nanoseconds();
-        const int64_t velocity_stamp = rclcpp::Time(gps_velocity->next.header.stamp).nanoseconds();
-        if (std::min(fix_stamp, velocity_stamp) * 1e-9 > required_imu_time)
-          break;
-        if (fix_stamp != velocity_stamp) {
-          ++gps_unpaired;
-          if (fix_stamp < velocity_stamp)
-            gps_fix->advance();
-          else
-            gps_velocity->advance();
-          continue;
-        }
-        const double gps_time = rclcpp::Time(gps_fix->next.header.stamp).seconds();
-        if (sys->initialized_time() >= 0.0 &&
-            gps_time - sys->get_state()->_calib_dt_CAMtoIMU->value()(0) >= sys->initialized_time() + params.max_gps_init_time) {
-          gps_fix.reset();
-          gps_velocity.reset();
-          break;
-        }
-        ++gps_pairs;
-        const auto &fix = gps_fix->next;
-        const auto &velocity = gps_velocity->next;
-        if (velocity.header.frame_id != "enu")
-          throw std::runtime_error("GPS velocity must be in the local ENU frame (header.frame_id = enu)");
-        if (fix.status.status < sensor_msgs::msg::NavSatStatus::STATUS_FIX ||
-            fix.position_covariance_type == sensor_msgs::msg::NavSatFix::COVARIANCE_TYPE_UNKNOWN) {
-          ++gps_invalid;
-        } else {
-          while (imu.has_next && last_imu_time <= gps_time)
-            feed_imu();
-          if (last_imu_time > gps_time) {
-            ov_core::GPSData gps;
-            gps.timestamp = gps_time;
-            gps.lla << fix.latitude, fix.longitude, fix.altitude;
-            gps.velocity << velocity.twist.twist.linear.x, velocity.twist.twist.linear.y, velocity.twist.twist.linear.z;
-            gps.cov_position = Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>>(fix.position_covariance.data());
-            gps.cov_velocity =
-                Eigen::Map<const Eigen::Matrix<double, 6, 6, Eigen::RowMajor>>(velocity.twist.covariance.data()).topLeftCorner<3, 3>();
-            if (sys->feed_measurement_gps(gps)) {
-              if (gps_applied == 0)
-                first_gps_applied = gps_time;
-              last_gps_applied = gps_time;
-              ++gps_applied;
-            }
-          }
-        }
-        gps_fix->advance();
-        gps_velocity->advance();
-      }
       while (imu.has_next && last_imu_time <= required_imu_time)
         feed_imu();
       if (last_imu_time <= required_imu_time) {
@@ -350,7 +310,7 @@ int main(int argc, char **argv) {
       }
 
       // Match the ROS callbacks: throttle each monocular stream, or the synchronized pair using camera 0's timestamp.
-      // Continue dispatching IMU and GPS above even when this image is dropped.
+      // Continue dispatching IMU above even when this image is dropped.
       double &last_camera_time = last_camera_times.at(frames.front().first);
       if (camera_time < last_camera_time + camera_interval) {
         images_throttled += frames.size();
@@ -382,14 +342,6 @@ int main(int argc, char **argv) {
     PRINT_INFO("[BAG]: Fed %zu IMU samples and %zu images in %zu camera updates\n", imu_count, image_count, update_count);
     PRINT_INFO("[BAG]: Dropped %zu images to enforce track_frequency %.3f Hz\n", images_throttled, params.track_frequency);
     PRINT_INFO("[BAG]: Simulated time %.3f seconds | processing time %.3f seconds\n", last_imu_time - first_imu_time, processing_time);
-    if (use_gps) {
-      PRINT_INFO("[GPS]: Applied %zu of %zu paired samples; %zu invalid fixes and %zu unpaired messages; first/last %.9f %.9f\n",
-                 gps_applied, gps_pairs, gps_invalid, gps_unpaired, first_gps_applied, last_gps_applied);
-      PRINT_INFO("[GPS]: VIO initialization %.9f, cutoff %.9f (camera clock)\n", sys->initialized_time(),
-                 sys->initialized_time() + params.max_gps_init_time);
-      if (gps_applied == 0)
-        PRINT_WARNING("[GPS]: No usable GPS measurements were applied during initialization\n");
-    }
     if (stereo_sync && images_read > stereo_images_matched)
       PRINT_WARNING("[BAG]: %zu stereo images were not matched by OpenVINS synchronization\n", images_read - stereo_images_matched);
     if (viz)

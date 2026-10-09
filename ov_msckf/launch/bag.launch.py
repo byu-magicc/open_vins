@@ -1,3 +1,5 @@
+import json
+import math
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -41,8 +43,6 @@ def launch_setup(context):
     }
     for name, value_type in (
         ("max_cameras", int), ("use_stereo", bool), ("topic_imu", str),
-        ("max_gps_init_time", float), ("initial_global_yaw", float),
-        ("topic_gps_fix", str), ("topic_gps_velocity", str),
         ("track_frequency", float), ("num_opencv_threads", int), ("multi_threading_pubs", bool),
         ("save_total_state", bool), ("filepath_est", str), ("filepath_std", str), ("path_gt", str),
         ("publish_global_to_imu_tf", bool), ("publish_calibration_tf", bool),
@@ -50,6 +50,13 @@ def launch_setup(context):
         value = LaunchConfiguration(name).perform(context)
         if value:
             parameters[name] = ParameterValue(LaunchConfiguration(name), value_type=value_type)
+    initial_state = LaunchConfiguration("initial_state_imu").perform(context)
+    if initial_state:
+        state = json.loads(initial_state)
+        if (not isinstance(state, list) or len(state) != 17 or
+                any(type(value) not in (int, float) or not math.isfinite(value) for value in state)):
+            raise RuntimeError("initial_state_imu must be a JSON array of 17 finite numbers")
+        parameters["initial_state_imu"] = [float(value) for value in state]
     camera_topics = LaunchConfiguration("camera_topics").perform(context)
     if camera_topics:
         parameters["camera_topics"] = [topic.strip() for topic in camera_topics.split(",")]
@@ -100,6 +107,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("bag_path", description="ROS 2 bag directory or file"),
         DeclareLaunchArgument("bag_start", default_value="0.0", description="Start offset from the first IMU header timestamp (seconds)"),
+        DeclareLaunchArgument("initial_state_imu", default_value="", description="Optional JSON truth state [IMU timestamp, q_xyzw, p, v, bg, ba]"),
         DeclareLaunchArgument("bag_duration", default_value="-1.0", description="Replay duration in seconds; -1 processes the remaining bag"),
         DeclareLaunchArgument("namespace", default_value="ov_msckf"),
         DeclareLaunchArgument("config", default_value="euroc_mav"),
@@ -108,10 +116,6 @@ def generate_launch_description():
         DeclareLaunchArgument("camera_topics", default_value="", description="Comma-separated camera topics in camera ID order"),
         DeclareLaunchArgument("topic_camera0", default_value="", description="Override camera 0 topic; camera_topics takes precedence"),
         DeclareLaunchArgument("topic_camera1", default_value="", description="Override camera 1 topic; camera_topics takes precedence"),
-        DeclareLaunchArgument("max_gps_init_time", default_value="", description="GPS assistance duration from VIO initialization (seconds)"),
-        DeclareLaunchArgument("initial_global_yaw", default_value="", description="IMU heading at VIO initialization in ENU radians, counterclockwise from east"),
-        DeclareLaunchArgument("topic_gps_fix", default_value="/gps/fix"),
-        DeclareLaunchArgument("topic_gps_velocity", default_value="/gps/velocity"),
         DeclareLaunchArgument("max_cameras", default_value=""),
         DeclareLaunchArgument("use_stereo", default_value=""),
         DeclareLaunchArgument("track_frequency", default_value="", description="Maximum camera tracking rate per stream (Hz)"),
