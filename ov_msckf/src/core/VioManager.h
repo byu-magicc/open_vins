@@ -27,13 +27,13 @@
 #include <atomic>
 #include <boost/filesystem.hpp>
 #include <fstream>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 
 #include "VioManagerOptions.h"
-#include "types/PoseJPL.h"
+#include "factor_graph/FactorGraphTypes.h"
 
 namespace ov_core {
 struct ImuData;
@@ -47,17 +47,10 @@ class InertialInitializer;
 
 namespace ov_msckf {
 
-struct EstimatorResult {
-  double timestamp = -1;
-  bool valid = false;
-  Eigen::Matrix<double, 16, 1> state = Eigen::Matrix<double, 16, 1>::Zero();
-  Eigen::Matrix<double, 15, 15> covariance = Eigen::Matrix<double, 15, 15>::Zero();
-};
-
 class State;
 class StateHelper;
-class FactorGraphManager;
-class UpdaterGlobal;
+class FactorGraphState;
+class EstimatorResults;
 class UpdaterMSCKF;
 class UpdaterSLAM;
 class UpdaterZeroVelocity;
@@ -91,13 +84,6 @@ public:
    * @param message Contains our timestamp, images, and camera ids
    */
   void feed_measurement_camera(const ov_core::CameraData &message) { track_image_and_update(message); }
-
-  /**
-   * @brief Feed function for a GPS measurement
-   * @param message Contains an IMU-clock timestamp, WGS84 fix, local ENU velocity, and covariances
-   * @return True if the measurement was applied to the initialized estimator
-   */
-  bool feed_measurement_gps(const ov_core::GPSData &message);
 
   /**
    * @brief Feed function for a synchronized simulated cameras
@@ -228,7 +214,7 @@ protected:
   std::shared_ptr<ov_init::InertialInitializer> initializer;
 
   /// Passive factor-graph estimator which receives the same accepted information when enabled
-  std::unique_ptr<FactorGraphManager> factorGraphManager;
+  std::unique_ptr<FactorGraphState> factor_graph;
 
   /// Boolean if we are initialized or not
   bool is_initialized_vio = false;
@@ -242,9 +228,6 @@ protected:
   /// Our zero velocity tracker
   std::shared_ptr<UpdaterZeroVelocity> updaterZUPT;
 
-  /// Our global measurement updater
-  std::shared_ptr<UpdaterGlobal> updaterGlobal;
-
   /// This is the queue of measurement times that have come in since we starting doing initialization
   /// After we initialize, we will want to prop & update to the latest timestamp quickly
   std::vector<double> camera_queue_init;
@@ -252,8 +235,7 @@ protected:
 
   // Timing statistic file and variables
   std::ofstream of_statistics;
-  std::ofstream estimator_results;
-  std::ofstream groundtruth_results;
+  std::unique_ptr<EstimatorResults> results;
   size_t reset_success_count = 0;
   size_t reset_skip_count = 0;
   bool estimator_result_cache_valid = false;
@@ -267,11 +249,9 @@ protected:
   // Startup time of the filter
   double startup_time = -1;
 
-  /// Reject duplicate or out-of-order GPS updates, including equal-time measurements.
-  double last_gps_time = -std::numeric_limits<double>::infinity();
-
   // Threads and their atomics
   std::atomic<bool> thread_init_running, thread_init_success;
+  std::thread initialization_thread;
 
   // If we did a zero velocity update
   bool did_zupt_update = false;

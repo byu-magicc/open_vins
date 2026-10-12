@@ -150,6 +150,7 @@ protected:
 
   std::atomic<bool> stop_image_publishing{false};
   std::thread image_publish_thread;
+  std::thread update_thread;
 
   /// Prefix for vehicle-specific TF frames when using a ROS sub-namespace
   std::string _frame_prefix;

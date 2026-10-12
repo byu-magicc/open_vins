@@ -23,10 +23,7 @@
 #define OV_MSCKF_FACTORGRAPHTYPES_H
 
 #include <Eigen/Eigen>
-#include <cstddef>
-#include <map>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace ov_msckf {
@@ -41,75 +38,23 @@ namespace ov_msckf {
 struct FactorGraphInitialization {
   double timestamp = -1;
   Eigen::Matrix<double, 16, 1> imu_state = Eigen::Matrix<double, 16, 1>::Zero();
-  Eigen::MatrixXd covariance;
-  std::vector<std::string> variable_names;
-  std::vector<int> variable_dimensions;
-  std::map<std::string, Eigen::VectorXd> calibration_values;
+  Eigen::Matrix<double, 15, 15> covariance;
 };
 
-/**
- * @brief Immutable copy of the measurements belonging to one accepted feature track.
- *
- * The maps are keyed by camera ID. For each camera, timestamps and raw distorted pixels
- * have matching indices. The accepted OpenVINS triangulation is copied only as a
- * numerical seed; it is not an extra measurement.
- */
-struct FactorGraphFeatureTrack {
-  size_t feature_id = 0;
-  bool is_aruco = false;
-  int anchor_camera_id = -1;
-  double anchor_timestamp = -1;
-  Eigen::Vector3d position_global = Eigen::Vector3d::Zero();
-  Eigen::Vector3d position_anchor = Eigen::Vector3d::Zero();
-  std::unordered_map<size_t, std::vector<double>> timestamps;
-  std::unordered_map<size_t, std::vector<Eigen::VectorXf>> uvs;
-};
-
-/** @brief How OpenVINS used an accepted visual track at this camera timestamp. */
-enum class FactorGraphVisualUpdateType {
-  STRUCTURELESS,
-  PERSISTENT_UPDATE,
-  PERSISTENT_INITIALIZATION,
-};
-
-/** @brief Accepted visual measurements delivered together at one camera timestamp. */
-struct FactorGraphVisualUpdate {
-  FactorGraphVisualUpdateType type = FactorGraphVisualUpdateType::STRUCTURELESS;
-  std::vector<FactorGraphFeatureTrack> tracks;
-};
-
-/** @brief Factor-graph navigation result aligned with one camera transaction. */
-struct FactorGraphResult {
+/** Selected navigation posterior at one camera-clock timestamp. */
+struct EstimatorResult {
   double timestamp = -1;
   bool valid = false;
-  Eigen::Matrix<double, 16, 1> imu_state = Eigen::Matrix<double, 16, 1>::Zero();
+  Eigen::Matrix<double, 16, 1> state = Eigen::Matrix<double, 16, 1>::Zero();
   Eigen::Matrix<double, 15, 15> covariance = Eigen::Matrix<double, 15, 15>::Zero();
-  size_t factor_count = 0;
-  size_t value_count = 0;
-  double update_seconds = 0;
 };
 
-enum class FactorGraphResetVariableType {
-  IMU,
-  IMU_DW,
-  IMU_DA,
-  IMU_TG,
-  IMU_ROTATION,
-  CAMERA_TIME_OFFSET,
-  CAMERA_EXTRINSICS,
-  CAMERA_INTRINSICS,
-  CLONE,
-  LANDMARK_GLOBAL,
-  LANDMARK_ANCHORED,
-};
+enum class FactorGraphResetVariableType { IMU, CLONE };
 
 /** A requested OpenVINS variable in active-state covariance order. */
 struct FactorGraphResetVariable {
   FactorGraphResetVariableType type;
-  size_t id = 0;
-  double timestamp = -1;
-  double anchor_timestamp = -1;
-  size_t anchor_camera_id = 0;
+  double timestamp;
 };
 
 /** Graph posterior converted into OpenVINS values and error coordinates. */

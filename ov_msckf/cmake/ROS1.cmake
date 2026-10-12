@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.3)
 
 # Find ROS build system
 find_package(catkin QUIET COMPONENTS roscpp rosbag tf std_msgs geometry_msgs sensor_msgs nav_msgs visualization_msgs image_transport cv_bridge ov_core ov_init)
@@ -37,7 +37,6 @@ list(APPEND thirdparty_libraries
         ${OpenCV_LIBRARIES}
         ${CERES_LIBRARIES}
         ${catkin_LIBRARIES}
-        gtsam
 )
 
 # If we are not building with ROS then we need to manually link to its headers
@@ -83,12 +82,8 @@ list(APPEND LIBRARY_SOURCES
         src/state/State.cpp
         src/state/StateHelper.cpp
         src/state/Propagator.cpp
-        src/factor_graph/FactorGraphFactors.cpp
-        src/factor_graph/FactorGraphManager.cpp
-        src/factor_graph/FactorGraphState.cpp
         src/core/VioManager.cpp
         src/core/VioManagerHelper.cpp
-        src/update/UpdaterGlobal.cpp
         src/update/UpdaterHelper.cpp
         src/update/UpdaterMSCKF.cpp
         src/update/UpdaterSLAM.cpp
@@ -99,7 +94,6 @@ if (catkin_FOUND AND ENABLE_ROS)
 endif ()
 file(GLOB_RECURSE LIBRARY_HEADERS "src/*.h")
 add_library(ov_msckf_lib SHARED ${LIBRARY_SOURCES} ${LIBRARY_HEADERS})
-set_target_properties(ov_msckf_lib PROPERTIES NO_SYSTEM_FROM_IMPORTED TRUE)
 target_link_libraries(ov_msckf_lib ${thirdparty_libraries})
 target_include_directories(ov_msckf_lib PUBLIC src/)
 install(TARGETS ov_msckf_lib
@@ -157,18 +151,6 @@ install(TARGETS test_sim_meas
         RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
-add_executable(test_factor_graph_distributed src/test_factor_graph_distributed.cpp)
-target_link_libraries(test_factor_graph_distributed ov_msckf_lib ${thirdparty_libraries})
-install(TARGETS test_factor_graph_distributed DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
-
-add_executable(test_gt_init src/test_gt_init.cpp)
-target_link_libraries(test_gt_init ov_msckf_lib ${thirdparty_libraries})
-install(TARGETS test_gt_init DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
-
-add_executable(test_gps_update src/test_gps_update.cpp)
-target_link_libraries(test_gps_update ov_msckf_lib ${thirdparty_libraries})
-install(TARGETS test_gps_update DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
-
 add_executable(test_sim_repeat src/test_sim_repeat.cpp)
 target_link_libraries(test_sim_repeat ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS test_sim_repeat
@@ -176,3 +158,4 @@ install(TARGETS test_sim_repeat
         LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
         RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
+

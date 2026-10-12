@@ -26,11 +26,13 @@
 
 namespace ov_core {
 struct ImuData;
+class Feature;
 } // namespace ov_core
 
 namespace ov_msckf {
 
 struct VioManagerOptions;
+class State;
 
 /** Parallel GTSAM estimator that consumes decisions made by VioManager. */
 class FactorGraphState {
@@ -39,27 +41,23 @@ public:
 
   void feed_imu(const ov_core::ImuData &message);
   void initialize(const FactorGraphInitialization &initialization);
+  void initialize(const std::shared_ptr<State> &openvins_state);
+  bool reset_openvins(const std::shared_ptr<State> &openvins_state, std::string &error);
   void materialize_clone(double timestamp);
-  void add_zero_velocity_factor(double timestamp);
-  void add_gps_factors(const ov_core::GPSGlobalData &message);
-  void add_visual_factors(const FactorGraphVisualUpdate &update);
-  void marginalize_landmarks(const std::vector<size_t> &feature_ids);
+  void add_visual_factors(const std::vector<std::shared_ptr<ov_core::Feature>> &features);
 
   /** Commit one camera transaction without extracting an estimate or covariance. */
   void finish_update();
 
   /** Return the estimate propagated to the requested timestamp. */
-  FactorGraphResult get_estimate(double timestamp);
+  EstimatorResult get_estimate(double timestamp);
   FactorGraphResetSnapshot get_reset_snapshot(const std::vector<FactorGraphResetVariable> &variables);
 
   void communicate(FactorGraphState &neighbor, double timestamp, double neighbor_timestamp, double range, double variance);
 
 private:
-  friend struct FactorGraphDistributedTest;
-
   struct Summary {
     uint64_t version;
-    double timestamp;
     gtsam::JacobianFactor::shared_ptr factor;
     gtsam::Values values;
   };
@@ -70,7 +68,7 @@ private:
   };
 
   gtsam::Key declare_shared(double timestamp);
-  Summary get_summary(double timestamp);
+  Summary get_summary();
   void update_summary(const Summary &summary, size_t origin);
   struct Frame {
     double timestamp = -1;
@@ -82,6 +80,7 @@ private:
   gtsam::Values current_values() const;
   Frame &ensure_frame(double timestamp);
   void commit(bool full_update = false);
+  gtsam::PreintegratedCombinedMeasurements preintegrate(double start, double end, const gtsam::imuBias::ConstantBias &bias) const;
 
   size_t agent_id;
   uint64_t summary_version = 0;
@@ -94,25 +93,19 @@ private:
   gtsam::NonlinearFactorGraph pending_factors;
   gtsam::Values pending_values;
   std::map<double, Frame> frames;
-  std::map<size_t, gtsam::Key> landmark_keys;
   std::vector<ov_core::ImuData> imu_buffer;
-  std::map<size_t, FactorGraphCameraCalibration> camera_calibrations;
-  FactorGraphImuCalibration imu_calibration;
-
-  double gravity = 9.81;
-  double sigma_gyro = 0;
-  double sigma_accel = 0;
-  double sigma_gyro_bias = 0;
-  double sigma_accel_bias = 0;
-  double sigma_msckf_pixels = 1;
-  double sigma_slam_pixels = 1;
-  double sigma_aruco_pixels = 1;
-  double zupt_noise_multiplier = 1;
+  boost::shared_ptr<GraphCameraRig> camera_rig;
+  boost::shared_ptr<gtsam::PreintegrationCombinedParams> preintegration_parameters;
+  Eigen::Matrix3d accel_calibration;
+  Eigen::Matrix3d gyro_calibration;
+  Eigen::Matrix3d gravity_sensitivity;
+  gtsam::Matrix6 raw_to_corrected;
+  gtsam::Matrix6 noise_to_raw;
+  double time_offset;
+  double sigma_msckf_pixels;
   bool initialized = false;
   bool failed = false;
   size_t next_frame_index = 0;
-  size_t next_landmark_index = 0;
-  double last_update_seconds = 0;
 
   std::mutex mutex;
 };

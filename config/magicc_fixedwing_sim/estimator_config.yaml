@@ -7,14 +7,14 @@ integration: "discrete" # discrete, rk4, analytical (if rk4 or analytical used t
 use_stereo: false # if we have more than 1 camera, if we should try to track stereo constraints
 max_cameras: 1 # how many cameras we have 1 = mono, 2 = stereo, >2 = binocular (all mono tracking)
 
-calib_cam_extrinsics: true # if the transform between camera and IMU should be optimized R_ItoC, p_CinI
-calib_cam_intrinsics: true # if camera intrinsics should be optimized (focal, center, distortion)
-calib_cam_timeoffset: true # if timeoffset between camera and IMU should be optimized
-calib_imu_intrinsics: true # if imu intrinsics should be calibrated
-calib_imu_g_sensitivity: true # if gyroscope gravity sensitivity should be calibrated
+calib_cam_extrinsics: false # if the transform between camera and IMU should be optimized R_ItoC, p_CinI
+calib_cam_intrinsics: false # if camera intrinsics should be optimized (focal, center, distortion)
+calib_cam_timeoffset: false # if timeoffset between camera and IMU should be optimized
+calib_imu_intrinsics: false # if imu intrinsics should be calibrated
+calib_imu_g_sensitivity: false # if gyroscope gravity sensitivity should be calibrated
 
 max_clones: 11
-max_slam: 50
+max_slam: 0
 max_slam_in_update: 25
 max_msckf_in_update: 10
 dt_slam_delay: 2

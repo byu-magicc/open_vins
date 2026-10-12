@@ -1,4 +1,4 @@
-This fork of OpenVINS attempts to create a multi-agent GTSAM-based factor graph that mimics the single-agent performance of OpenVINS while allowing multi-agent cooperation. This implementation is heavily vibe coded (originally for research speed, but I'm really beginning to think vibe-coding is not a good idea) and as such I cannot ensure it's complete accuracy and do not recommend using to control real hardware without rigorous testing and validation.
+This fork of OpenVINS attempts to create a multi-agent GTSAM-based factor graph that mimics the single-agent performance of OpenVINS while allowing multi-agent cooperation.
 
 To use, build and run `Containerfile` with Podman or a similar program:
 
@@ -24,9 +24,12 @@ For an individual launch, set `filter_type:=openvins`,
 `filter_type:=factor_graph`, or `filter_type:=hybrid`. The default is
 `openvins`. Each run saves only the selected estimator to `estimate.csv`.
 
-Note that OpenVINS supports very old versions of Ubuntu and ROS, but this fork is intended for use with Ubuntu 24 and ROS2 Jazzy only.
+Factor-graph and hybrid modes support MSCKF tracks with fixed calibration. Set
+`max_slam: 0`, `use_aruco: false`, `try_zupt: false`, and all online
+`calib_cam_*` / `calib_imu_*` options to `false`. Unsupported graph settings
+produce a startup error. The ordinary OpenVINS mode retains its upstream features.
 
-[![Container Workflow](https://github.com/byu-magicc/open_vins/actions/workflows/container.yml/badge.svg)](https://github.com/byu-magicc/open_vins/actions/workflows/container.yml)
+Note that OpenVINS supports very old versions of Ubuntu and ROS, but this fork is intended for use with Ubuntu 24 and ROS2 Jazzy only.
 
 ---
 
@@ -213,3 +216,5 @@ following:
 
 The codebase and documentation is licensed under the [GNU General Public License v3 (GPL-3)](https://www.gnu.org/licenses/gpl-3.0.txt).
 You must preserve the copyright and license notices in your derivative work and make available the complete source code with modifications under the same license ([see this](https://choosealicense.com/licenses/gpl-3.0/); this is not legal advice).
+
+

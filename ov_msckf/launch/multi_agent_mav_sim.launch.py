@@ -1,8 +1,8 @@
 import os
 import re
+import sys
 import tempfile
 
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -16,6 +16,9 @@ from launch.event_handlers import OnShutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
+
+sys.path.insert(0, os.path.dirname(__file__))
+from openvins_launch import rviz_configuration
 
 def launch_setup(context):
     namespace = "multi_agent"
@@ -37,31 +40,7 @@ def launch_setup(context):
                 "RViz requires agent_names to be valid ROS namespace tokens: "
                 + ", ".join(invalid_names)
             )
-        template_path = os.path.join(
-            get_package_share_directory("ov_msckf"),
-            "launch",
-            "display_multi_agent_ros2.rviz",
-        )
-        with open(template_path, encoding="utf-8") as template_file:
-            rviz_template = template_file.read()
-        before_agents, separator, agent_template = rviz_template.partition(
-            "# BEGIN AGENT TEMPLATE\n"
-        )
-        if not separator:
-            raise RuntimeError("Multi-agent RViz template is missing its start marker")
-        agent_template, separator, after_agents = agent_template.partition(
-            "# END AGENT TEMPLATE\n"
-        )
-        if not separator:
-            raise RuntimeError("Multi-agent RViz template is missing its end marker")
-
-        agent_displays = "".join(
-            agent_template.replace("{namespace}", namespace).replace(
-                "{agent}", agent_name
-            )
-            for agent_name in agent_names
-        )
-        rviz_config = before_agents + agent_displays + after_agents
+        rviz_config = rviz_configuration(agent_names, namespace)
 
         with tempfile.NamedTemporaryFile(
             mode="w",

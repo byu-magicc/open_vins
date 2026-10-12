@@ -52,6 +52,9 @@
     <depend condition="$ROS_VERSION == 2">ov_core</depend>
     <depend condition="$ROS_VERSION == 2">ov_init</depend>
     <exec_depend condition="$ROS_VERSION == 2">python3-yaml</exec_depend>
+    <exec_depend condition="$ROS_VERSION == 2">python3-numpy</exec_depend>
+    <exec_depend condition="$ROS_VERSION == 2">python3-scipy</exec_depend>
+    <exec_depend condition="$ROS_VERSION == 2">python3-matplotlib</exec_depend>
 
     <!-- System dependencies for both versions -->
     <depend>eigen</depend>

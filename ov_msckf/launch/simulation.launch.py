@@ -6,8 +6,13 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from openvins_launch import graph_arguments, graph_parameters
 
 launch_args = [
+    *graph_arguments(10),
     DeclareLaunchArgument(name="namespace", default_value="ov_msckf", description="namespace"),
     DeclareLaunchArgument(
         name="rviz_enable", default_value="false", description="enable rviz node"
@@ -58,7 +63,7 @@ launch_args = [
     ),
     DeclareLaunchArgument(
         name="num_slam",
-        default_value="50"
+        default_value="0"
     ),
     DeclareLaunchArgument(
         name="num_pts",
@@ -73,36 +78,6 @@ launch_args = [
         name="use_stereo",
         default_value="true",
         description="if we have more than 1 camera, if we should try to track stereo constraints between pairs",
-    ),
-    DeclareLaunchArgument(
-        name="filter_type",
-        default_value="openvins",
-        description="estimator to expose: openvins, factor_graph, or hybrid",
-    ),
-    DeclareLaunchArgument(
-        name="relinearize_skip",
-        default_value="10",
-        description="number of iSAM2 updates between relinearization checks",
-    ),
-    DeclareLaunchArgument(
-        name="relinearize_threshold",
-        default_value="0.1",
-        description="change in a variable required for iSAM2 to relinearize it",
-    ),
-    DeclareLaunchArgument(
-        name="use_qr",
-        default_value="false",
-        description="use QR factorization in iSAM2 instead of Cholesky",
-    ),
-    DeclareLaunchArgument(
-        name="save_results",
-        default_value="false",
-        description="save aligned OpenVINS, factor-graph, and ground-truth CSV files",
-    ),
-    DeclareLaunchArgument(
-        name="results_path",
-        default_value="results",
-        description="base result directory; the ROS namespace is appended automatically",
     ),
     DeclareLaunchArgument(
         name="feat_dist_min",
@@ -140,15 +115,15 @@ launch_args = [
     ),
     DeclareLaunchArgument(
         name="sim_do_calibration",
-        default_value="true"
+        default_value="false"
     ),
     DeclareLaunchArgument(
         name="sim_do_calib_imu_intrinsics",
-        default_value="true"
+        default_value="false"
     ),
     DeclareLaunchArgument(
         name="sim_do_calib_g_sensitivity",
-        default_value="true"
+        default_value="false"
     ),
 
     DeclareLaunchArgument(
@@ -209,14 +184,6 @@ def launch_setup(context):
             "sim",
             "state_estimate.txt"
         )
-    else:
-        if not os.path.isfile(path_state_est):
-            return [
-                LogInfo(
-                    msg="ERROR: path_state_est file: '{}' - does not exist. - not starting OpenVINS simulation".format(
-                        path_state_est)
-                    )
-            ]
 
     # Get path_state_std filepath
     path_state_std = LaunchConfiguration("path_state_std").perform(context)
@@ -227,14 +194,6 @@ def launch_setup(context):
             "sim",
             "state_deviation.txt"
         )
-    else:
-        if not os.path.isfile(path_state_std):
-            return [
-                LogInfo(
-                    msg="ERROR: path_state_std file: '{}' - does not exist. - not starting OpenVINS simulation".format(
-                        path_state_std)
-                    )
-            ]
 
     # Get path_state_gt filepath
     path_state_gt = LaunchConfiguration("path_state_gt").perform(context)
@@ -245,14 +204,6 @@ def launch_setup(context):
             "sim",
             "state_groundtruth.txt"
         )
-    else:
-        if not os.path.isfile(path_state_gt):
-            return [
-                LogInfo(
-                    msg="ERROR: path_state_gt file: '{}' - does not exist. - not starting OpenVINS simulation".format(
-                        path_state_gt)
-                    )
-            ]
 
     master_node = Node(
         name="ov_msckf",
@@ -262,6 +213,7 @@ def launch_setup(context):
         output='screen',
         on_exit=Shutdown(),
         parameters=[
+            graph_parameters(),
             {"sim_traj_path":
                 os.path.join(
                     get_package_share_directory("ov_data"),
@@ -311,12 +263,6 @@ def launch_setup(context):
             {"max_clones": LaunchConfiguration("num_clones")},
             {"max_slam": LaunchConfiguration("num_slam")},
             {"use_stereo": LaunchConfiguration("use_stereo")},
-            {"filter_type": LaunchConfiguration("filter_type")},
-            {"relinearize_skip": LaunchConfiguration("relinearize_skip")},
-            {"relinearize_threshold": LaunchConfiguration("relinearize_threshold")},
-            {"use_qr": LaunchConfiguration("use_qr")},
-            {"save_results": LaunchConfiguration("save_results")},
-            {"results_path": LaunchConfiguration("results_path")},
             {"max_cameras": LaunchConfiguration("max_cameras")},
             {"feat_rep_msckf": LaunchConfiguration("feat_rep")},
             {"feat_rep_slam": LaunchConfiguration("feat_rep")},

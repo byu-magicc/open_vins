@@ -35,6 +35,11 @@
 
 using namespace ov_msckf;
 
+#if ROS_AVAILABLE == 1
+std::shared_ptr<VioManager> sys;
+std::shared_ptr<ROS1Visualizer> viz;
+#endif
+
 // Main function
 int main(int argc, char **argv) {
 
@@ -75,15 +80,16 @@ int main(int argc, char **argv) {
   // Create our VIO system
   VioManagerOptions params;
   params.print_and_load(parser);
-#if ROS_AVAILABLE == 1
-  params.set_results_namespace(ros::this_node::getNamespace());
-#elif ROS_AVAILABLE == 2
+#if ROS_AVAILABLE == 2
   params.set_results_namespace(node->get_namespace());
 #endif
   params.use_multi_threading_subs = true;
-  auto sys = std::make_shared<VioManager>(params);
+#if ROS_AVAILABLE != 1
+  std::shared_ptr<VioManager> sys;
+#endif
+  sys = std::make_shared<VioManager>(params);
 #if ROS_AVAILABLE == 1
-  auto viz = std::make_shared<ROS1Visualizer>(nh, sys);
+  viz = std::make_shared<ROS1Visualizer>(nh, sys);
   viz->setup_subscribers(parser);
 #elif ROS_AVAILABLE == 2
   auto viz = std::make_shared<ROS2Visualizer>(node, sys);
@@ -113,10 +119,6 @@ int main(int argc, char **argv) {
   // Final visualization
   viz->visualize_final();
 #if ROS_AVAILABLE == 1
-  viz.reset();
-  sys.reset();
-  parser.reset();
-  nh.reset();
   ros::shutdown();
 #elif ROS_AVAILABLE == 2
   executor.remove_node(node);

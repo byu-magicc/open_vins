@@ -21,7 +21,7 @@
 
 #include "VioManager.h"
 
-#include "factor_graph/FactorGraphManager.h"
+#include "factor_graph/FactorGraphState.h"
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"
@@ -50,7 +50,7 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   Eigen::MatrixXd Cov = std::pow(0.02, 2) * Eigen::MatrixXd::Identity(state->_imu->size(), state->_imu->size());
   Cov.block(0, 0, 3, 3) = std::pow(0.017, 2) * Eigen::Matrix3d::Identity(); // q
   Cov.block(3, 3, 3, 3) = std::pow(0.05, 2) * Eigen::Matrix3d::Identity();  // p
-  Cov.block(6, 6, 3, 3) = std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v
+  Cov.block(6, 6, 3, 3) = std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v (static)
   StateHelper::set_initial_covariance(state, Cov, order);
 
   // Set the state time
@@ -59,8 +59,8 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   is_initialized_vio = true;
 
   // Seed the passive graph with the same initialized navigation value and uncertainty
-  if (factorGraphManager != nullptr) {
-    factorGraphManager->initialize(state);
+  if (factor_graph != nullptr) {
+    factor_graph->initialize(state);
   }
 
   // Cleanup any features older then the initialization time
@@ -72,7 +72,7 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   }
 
   // Print what we init'ed with
-  PRINT_DEBUG(GREEN "[INIT]: INITIALIZED FROM SUPPLIED GROUND TRUTH\n" RESET);
+  PRINT_DEBUG(GREEN "[INIT]: INITIALIZED FROM GROUNDTRUTH FILE!!!!!\n" RESET);
   PRINT_DEBUG(GREEN "[INIT]: orientation = %.4f, %.4f, %.4f, %.4f\n" RESET, state->_imu->quat()(0), state->_imu->quat()(1),
               state->_imu->quat()(2), state->_imu->quat()(3));
   PRINT_DEBUG(GREEN "[INIT]: bias gyro = %.4f, %.4f, %.4f\n" RESET, state->_imu->bias_g()(0), state->_imu->bias_g()(1),
@@ -100,8 +100,10 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
   }
 
   // Run the initialization in a second thread so it can go as slow as it desires
+  if (initialization_thread.joinable())
+    initialization_thread.join();
   thread_init_running = true;
-  std::thread thread([&] {
+  initialization_thread = std::thread([this] {
     // Returns from our initializer
     double timestamp;
     Eigen::MatrixXd covariance;
@@ -126,8 +128,8 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       startup_time = timestamp;
 
       // Seed the passive graph only after OpenVINS has accepted the initialization result
-      if (factorGraphManager != nullptr) {
-        factorGraphManager->initialize(state);
+      if (factor_graph != nullptr) {
+        factor_graph->initialize(state);
       }
 
       // Cleanup any features older than the initialization time
@@ -173,6 +175,8 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       for (size_t i = 0; i < camera_timestamps_to_init.size(); i += clone_rate) {
         propagator->propagate_and_clone(state, camera_timestamps_to_init.at(i));
         StateHelper::marginalize_old_clone(state);
+        if (factor_graph && state->_timestamp == camera_timestamps_to_init.at(i))
+          factor_graph->materialize_clone(camera_timestamps_to_init.at(i));
         finish_factor_graph_update();
       }
       PRINT_DEBUG(YELLOW "[init]: moved the state forward %.2f seconds\n" RESET, state->_timestamp - timestamp);
@@ -191,13 +195,8 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
     thread_init_running = false;
   });
 
-  // If we are single threaded, then run single threaded
-  // Otherwise detach this thread so it runs in the background!
-  if (!params.use_multi_threading_subs) {
-    thread.join();
-  } else {
-    thread.detach();
-  }
+  if (!params.use_multi_threading_subs)
+    initialization_thread.join();
   return false;
 }
 

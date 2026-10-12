@@ -17,4 +17,3 @@ The supported fork environment is Ubuntu 24.04 with ROS 2 Jazzy and GTSAM 4.2.2.
 ## Coding Style & Naming Conventions
 
 Use two-space indentation, no tabs, attached braces, sorted includes, and a 140-column limit, as defined by `.clang-format`. Match existing conventions: `PascalCase` for classes and class-focused filenames, `snake_case` for functions and variables, and uppercase include guards. Prefer direct, readable research code over abstractions used only once. Do not add unnecessary default arguments or trailing whitespace. Remove methods and data structures made obsolete by a change. Preserve GPL copyright headers in C++ files.
-

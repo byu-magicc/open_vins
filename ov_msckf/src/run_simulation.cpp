@@ -39,6 +39,12 @@
 
 using namespace ov_msckf;
 
+#if ROS_AVAILABLE == 1
+std::shared_ptr<Simulator> sim;
+std::shared_ptr<VioManager> sys;
+std::shared_ptr<ROS1Visualizer> viz;
+#endif
+
 // Define the function to be called when ctrl-c (SIGINT) is sent to process
 void signal_callback_handler(int signum) { std::exit(signum); }
 
@@ -83,18 +89,20 @@ int main(int argc, char **argv) {
   VioManagerOptions params;
   params.print_and_load(parser);
   params.print_and_load_simulation(parser);
-#if ROS_AVAILABLE == 1
-  params.set_results_namespace(ros::this_node::getNamespace());
-#elif ROS_AVAILABLE == 2
+#if ROS_AVAILABLE == 2
   params.set_results_namespace(node->get_namespace());
 #endif
   params.num_opencv_threads = 0; // for repeatability
   params.use_multi_threading_pubs = false;
   params.use_multi_threading_subs = false;
-  auto sim = std::make_shared<Simulator>(params);
-  auto sys = std::make_shared<VioManager>(params);
+#if ROS_AVAILABLE != 1
+  std::shared_ptr<Simulator> sim;
+  std::shared_ptr<VioManager> sys;
+#endif
+  sim = std::make_shared<Simulator>(params);
+  sys = std::make_shared<VioManager>(params);
 #if ROS_AVAILABLE == 1
-  auto viz = std::make_shared<ROS1Visualizer>(nh, sys, sim);
+  viz = std::make_shared<ROS1Visualizer>(nh, sys, sim);
 #elif ROS_AVAILABLE == 2
   auto viz = std::make_shared<ROS2Visualizer>(node, sys, sim);
 #endif
@@ -164,12 +172,14 @@ int main(int argc, char **argv) {
     if (hascam) {
       if (buffer_timecam != -1) {
         sys->feed_measurement_simulation(buffer_timecam, buffer_camids, buffer_feats);
+#if ROS_AVAILABLE == 2
         if (params.save_results) {
           Eigen::Matrix<double, 17, 1> groundtruth;
           const double groundtruth_time = buffer_timecam + sim->get_true_parameters().calib_camimu_dt;
           if (sim->get_state(groundtruth_time, groundtruth))
             sys->record_groundtruth(buffer_timecam, groundtruth.segment<16>(1));
         }
+#endif
 #if ROS_AVAILABLE == 1 || ROS_AVAILABLE == 2
         viz->visualize();
 #endif
@@ -183,11 +193,6 @@ int main(int argc, char **argv) {
   // Final visualization
 #if ROS_AVAILABLE == 1
   viz->visualize_final();
-  viz.reset();
-  sys.reset();
-  sim.reset();
-  parser.reset();
-  nh.reset();
   ros::shutdown();
 #elif ROS_AVAILABLE == 2
   viz->visualize_final();

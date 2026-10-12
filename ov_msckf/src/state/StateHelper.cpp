@@ -273,7 +273,8 @@ bool StateHelper::reset(std::shared_ptr<State> state, const std::vector<std::sha
   int dimension = 0;
   for (const auto &variable : variables)
     dimension += variable->size();
-  if (variables.size() != values.size() || covariance.rows() != dimension || covariance.cols() != dimension || !covariance.allFinite()) {
+  if (dimension != state->_Cov.rows() || variables.size() != values.size() || covariance.rows() != dimension ||
+      covariance.cols() != dimension || !covariance.allFinite()) {
     error = "reset state dimensions or covariance are invalid";
     return false;
   }

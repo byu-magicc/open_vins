@@ -63,11 +63,10 @@ list(APPEND LIBRARY_SOURCES
         src/state/StateHelper.cpp
         src/state/Propagator.cpp
         src/factor_graph/FactorGraphFactors.cpp
-        src/factor_graph/FactorGraphManager.cpp
         src/factor_graph/FactorGraphState.cpp
+        src/core/EstimatorResults.cpp
         src/core/VioManager.cpp
         src/core/VioManagerHelper.cpp
-        src/update/UpdaterGlobal.cpp
         src/update/UpdaterHelper.cpp
         src/update/UpdaterMSCKF.cpp
         src/update/UpdaterSLAM.cpp
@@ -111,12 +110,12 @@ ament_target_dependencies(run_bag ${ament_libraries} message_filters rosbag2_cpp
 target_link_libraries(run_bag ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS run_bag DESTINATION lib/${PROJECT_NAME})
 
-add_executable(run_multi_agent_bag src/run_multi_agent_bag.cpp src/ros/BagPlayer.cpp src/ros/BagTruth.cpp)
+add_executable(run_multi_agent_bag src/run_multi_agent_bag.cpp src/ros/BagPlayer.cpp src/ros/BagTruth.cpp src/ros/FleetRunner.cpp)
 ament_target_dependencies(run_multi_agent_bag ${ament_libraries} message_filters rosbag2_cpp)
 target_link_libraries(run_multi_agent_bag ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS run_multi_agent_bag DESTINATION lib/${PROJECT_NAME})
 
-add_executable(run_multi_agent_simulation src/run_multi_agent_simulation.cpp)
+add_executable(run_multi_agent_simulation src/run_multi_agent_simulation.cpp src/ros/FleetRunner.cpp)
 ament_target_dependencies(run_multi_agent_simulation ${ament_libraries})
 target_link_libraries(run_multi_agent_simulation ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS run_multi_agent_simulation DESTINATION lib/${PROJECT_NAME})
@@ -125,21 +124,6 @@ add_executable(test_sim_meas src/test_sim_meas.cpp)
 ament_target_dependencies(test_sim_meas ${ament_libraries})
 target_link_libraries(test_sim_meas ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS test_sim_meas DESTINATION lib/${PROJECT_NAME})
-
-add_executable(test_factor_graph_distributed src/test_factor_graph_distributed.cpp)
-ament_target_dependencies(test_factor_graph_distributed ${ament_libraries})
-target_link_libraries(test_factor_graph_distributed ov_msckf_lib ${thirdparty_libraries})
-install(TARGETS test_factor_graph_distributed DESTINATION lib/${PROJECT_NAME})
-
-add_executable(test_gt_init src/test_gt_init.cpp)
-ament_target_dependencies(test_gt_init ${ament_libraries})
-target_link_libraries(test_gt_init ov_msckf_lib ${thirdparty_libraries})
-install(TARGETS test_gt_init DESTINATION lib/${PROJECT_NAME})
-
-add_executable(test_gps_update src/test_gps_update.cpp)
-ament_target_dependencies(test_gps_update ${ament_libraries})
-target_link_libraries(test_gps_update ov_msckf_lib ${thirdparty_libraries})
-install(TARGETS test_gps_update DESTINATION lib/${PROJECT_NAME})
 
 add_executable(test_sim_repeat src/test_sim_repeat.cpp)
 ament_target_dependencies(test_sim_repeat ${ament_libraries})

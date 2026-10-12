@@ -1,6 +1,10 @@
 import json
 import math
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from openvins_launch import graph_arguments, graph_parameters, camera_parameters
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -28,17 +32,12 @@ def launch_setup(context):
         raise RuntimeError(f"Estimator config does not exist: {config_path}")
 
     parameters = {
+        **graph_parameters(),
         "bag_path": bag_path,
         "bag_start": ParameterValue(LaunchConfiguration("bag_start"), value_type=float),
         "bag_duration": ParameterValue(LaunchConfiguration("bag_duration"), value_type=float),
         "config_path": config_path,
         "verbosity": LaunchConfiguration("verbosity"),
-        "filter_type": LaunchConfiguration("filter_type"),
-        "relinearize_skip": ParameterValue(LaunchConfiguration("relinearize_skip"), value_type=int),
-        "relinearize_threshold": ParameterValue(LaunchConfiguration("relinearize_threshold"), value_type=float),
-        "use_qr": ParameterValue(LaunchConfiguration("use_qr"), value_type=bool),
-        "save_results": ParameterValue(LaunchConfiguration("save_results"), value_type=bool),
-        "results_path": ParameterValue(LaunchConfiguration("results_path"), value_type=str),
         "visualize": ParameterValue(LaunchConfiguration("rviz_enable"), value_type=bool),
     }
     for name, value_type in (
@@ -57,13 +56,7 @@ def launch_setup(context):
                 any(type(value) not in (int, float) or not math.isfinite(value) for value in state)):
             raise RuntimeError("initial_state_imu must be a JSON array of 17 finite numbers")
         parameters["initial_state_imu"] = [float(value) for value in state]
-    camera_topics = LaunchConfiguration("camera_topics").perform(context)
-    if camera_topics:
-        parameters["camera_topics"] = [topic.strip() for topic in camera_topics.split(",")]
-    for index in range(2):
-        topic = LaunchConfiguration("topic_camera" + str(index)).perform(context)
-        if topic:
-            parameters["topic_camera" + str(index)] = topic
+    parameters.update(camera_parameters(context))
 
     def finish_bag(event, context):
         if event.returncode != 0:
@@ -105,6 +98,7 @@ def launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        *graph_arguments(10),
         DeclareLaunchArgument("bag_path", description="ROS 2 bag directory or file"),
         DeclareLaunchArgument("bag_start", default_value="0.0", description="Start offset from the first IMU header timestamp (seconds)"),
         DeclareLaunchArgument("initial_state_imu", default_value="", description="Optional JSON truth state [IMU timestamp, q_xyzw, p, v, bg, ba]"),
@@ -128,20 +122,6 @@ def generate_launch_description():
         DeclareLaunchArgument("publish_global_to_imu_tf", default_value=""),
         DeclareLaunchArgument("publish_calibration_tf", default_value=""),
         DeclareLaunchArgument("verbosity", default_value="INFO"),
-        DeclareLaunchArgument(
-            "filter_type", default_value="openvins", description="estimator to expose: openvins, factor_graph, or hybrid",
-        ),
-        DeclareLaunchArgument(
-            "relinearize_skip", default_value="10", description="number of iSAM2 updates between relinearization checks",
-        ),
-        DeclareLaunchArgument(
-            "relinearize_threshold", default_value="0.1", description="change in a variable required for iSAM2 to relinearize it",
-        ),
-        DeclareLaunchArgument(
-            "use_qr", default_value="false", description="use QR factorization in iSAM2 instead of Cholesky",
-        ),
-        DeclareLaunchArgument("save_results", default_value="false"),
-        DeclareLaunchArgument("results_path", default_value="results"),
         DeclareLaunchArgument("rviz_enable", default_value="false"),
         DeclareLaunchArgument("rviz_config_path", default_value=""),
         OpaqueFunction(function=launch_setup),

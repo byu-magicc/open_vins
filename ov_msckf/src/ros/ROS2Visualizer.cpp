@@ -36,7 +36,7 @@ using namespace ov_type;
 using namespace ov_msckf;
 
 ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_ptr<VioManager> app, std::shared_ptr<Simulator> sim)
-    : _node(node), _app(app), _sim(sim), _frame_prefix(node->get_sub_namespace().empty() ? "" : node->get_sub_namespace() + "/"),
+    : _node(node), _app(app), _sim(sim), _frame_prefix(node->get_sub_namespace().empty() ? "" : node->get_effective_namespace().substr(1) + "/"),
       thread_update_running(false) {
 
   // Setup our transform broadcaster
@@ -165,6 +165,8 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
 
 ROS2Visualizer::~ROS2Visualizer() {
   stop_image_publishing = true;
+  if (update_thread.joinable())
+    update_thread.join();
   if (image_publish_thread.joinable())
     image_publish_thread.join();
 }
@@ -476,8 +478,10 @@ void ROS2Visualizer::callback_inertial(const sensor_msgs::msg::Imu::SharedPtr ms
   // The visualization of the state, images, and features will be synchronous with the update!
   if (thread_update_running)
     return;
+  if (update_thread.joinable())
+    update_thread.join();
   thread_update_running = true;
-  std::thread thread([&] {
+  update_thread = std::thread([this, imu_timestamp = message.timestamp] {
     // Lock on the queue (prevents new images from appending)
     std::lock_guard<std::mutex> lck(camera_queue_mtx);
 
@@ -495,7 +499,7 @@ void ROS2Visualizer::callback_inertial(const sensor_msgs::msg::Imu::SharedPtr ms
 
       // Loop through our queue and see if we are able to process any of our camera measurements
       // We are able to process if we have at least one IMU measurement greater than the camera time
-      double timestamp_imu_inC = message.timestamp - _app->get_state()->_calib_dt_CAMtoIMU->value()(0);
+      double timestamp_imu_inC = imu_timestamp - _app->get_state()->_calib_dt_CAMtoIMU->value()(0);
       while (!camera_queue.empty() && camera_queue.at(0).timestamp < timestamp_imu_inC) {
         auto rT0_1 = boost::posix_time::microsec_clock::local_time();
         double update_dt = 100.0 * (timestamp_imu_inC - camera_queue.at(0).timestamp);
@@ -510,13 +514,8 @@ void ROS2Visualizer::callback_inertial(const sensor_msgs::msg::Imu::SharedPtr ms
     thread_update_running = false;
   });
 
-  // If we are single threaded, then run single threaded
-  // Otherwise detach this thread so it runs in the background!
-  if (!_app->get_params().use_multi_threading_subs) {
-    thread.join();
-  } else {
-    thread.detach();
-  }
+  if (!_app->get_params().use_multi_threading_subs)
+    update_thread.join();
 }
 
 void ROS2Visualizer::callback_monocular(const sensor_msgs::msg::Image::SharedPtr msg0, int cam_id0) {
@@ -617,6 +616,8 @@ void ROS2Visualizer::publish_state() {
   // Get the current state
   std::shared_ptr<State> state = _app->get_state();
   const EstimatorResult estimator = _app->get_estimator_result();
+  if (!estimator.valid)
+    return;
 
   // We want to publish in the IMU clock frame
   // The timestamp in the state will be the last camera time

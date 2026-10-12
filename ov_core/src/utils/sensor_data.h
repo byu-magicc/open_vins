@@ -78,30 +78,6 @@ struct CameraData {
   }
 };
 
-/** @brief GPS position and velocity at a common timestamp in the IMU clock. */
-struct GPSData {
-  double timestamp;
-
-  /// WGS84 latitude / longitude in degrees and ellipsoid height in meters.
-  Eigen::Vector3d lla;
-
-  /// Velocity in the local ENU frame at lla (m/s).
-  Eigen::Vector3d velocity;
-
-  /// Position (m^2) and velocity ((m/s)^2) covariance in that same local ENU frame.
-  Eigen::Matrix3d cov_position;
-  Eigen::Matrix3d cov_velocity;
-};
-
-/** @brief Accepted GPS observation in the VIO global frame, with a camera-clock timestamp. */
-struct GPSGlobalData {
-  double timestamp;
-  Eigen::Vector3d position;
-  Eigen::Vector3d velocity;
-  Eigen::Matrix3d cov_position;
-  Eigen::Matrix3d cov_velocity;
-};
-
 } // namespace ov_core
 
 #endif // OV_CORE_SENSOR_DATA_H

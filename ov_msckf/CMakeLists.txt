@@ -13,20 +13,14 @@ find_package(Ceres REQUIRED)
 find_package(GTSAM REQUIRED)
 message(STATUS "OPENCV: " ${OpenCV_VERSION} " | BOOST: " ${Boost_VERSION} " | CERES: " ${Ceres_VERSION} " | GTSAM: " ${GTSAM_VERSION})
 
-# The installed GTSAM was built with its bundled Eigen. It intentionally rejects
-# translation units that select a different Eigen version, so make its exported
-# Eigen include precede the system Eigen selected by ROS.
+# GTSAM's bundled Eigen must precede the system Eigen exported by ROS.
 get_target_property(GTSAM_EXPORTED_INCLUDE_DIRS gtsam INTERFACE_INCLUDE_DIRECTORIES)
-set(GTSAM_BUNDLED_EIGEN_INCLUDE "/usr/local/include/gtsam/3rdparty/Eigen")
-if (EXISTS "${GTSAM_BUNDLED_EIGEN_INCLUDE}/Eigen/Core")
-    include_directories(BEFORE ${GTSAM_BUNDLED_EIGEN_INCLUDE})
-endif ()
-foreach (GTSAM_EXPORTED_INCLUDE_DIR ${GTSAM_EXPORTED_INCLUDE_DIRS})
-    if (GTSAM_EXPORTED_INCLUDE_DIR MATCHES "3rdparty/Eigen")
-        # Imported-target include directories are treated as SYSTEM and CMake
-        # de-duplicates a normal include of the same path. A raw -I preserves
-        # the required precedence over ROS's system Eigen include.
-        add_compile_options(-I${GTSAM_EXPORTED_INCLUDE_DIR})
+foreach (GTSAM_INCLUDE_DIR ${GTSAM_EXPORTED_INCLUDE_DIRS})
+    if (EXISTS "${GTSAM_INCLUDE_DIR}/gtsam/3rdparty/Eigen/Eigen/Core")
+        include_directories(BEFORE "${GTSAM_INCLUDE_DIR}/gtsam/3rdparty/Eigen")
+    elseif (GTSAM_INCLUDE_DIR MATCHES "3rdparty/Eigen")
+        include_directories(BEFORE "${GTSAM_INCLUDE_DIR}")
+        add_compile_options(-I${GTSAM_INCLUDE_DIR})
     endif ()
 endforeach ()
 
@@ -66,3 +60,6 @@ else ()
     message(STATUS "No ROS versions found, building ROS1.cmake")
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ROS1.cmake)
 endif ()
+
+
+

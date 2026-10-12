@@ -95,12 +95,6 @@ public:
    */
   void invalidate_cache() { cache_imu_valid = false; }
 
-  void reset_time_offset(double time_offset) {
-    last_prop_time_offset = time_offset;
-    have_last_prop_time_offset = true;
-    invalidate_cache();
-  }
-
   /**
    * @brief Propagate state up to given timestamp and then clone
    *
@@ -114,9 +108,6 @@ public:
    * @param timestamp Time to propagate to and clone at (CAM clock frame)
    */
   void propagate_and_clone(std::shared_ptr<State> state, double timestamp);
-
-  /// Propagate without a clone. Return corrected angular velocity for camera-time augmentation.
-  Eigen::Vector3d propagate(std::shared_ptr<State> state, double timestamp);
 
   /**
    * @brief Gets what the state and its covariance will be at a given timestamp

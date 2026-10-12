@@ -69,7 +69,7 @@ def read_bag_truth(bag_path, offset_interval, imu_topic):
     return rows, clock, first_imu_time
 
 
-def interpolate_truth(rows, timestamps):
+def enu_states(rows, timestamps):
     if np.any(timestamps < rows[0, 0]) or np.any(timestamps > rows[-1, 0]):
         raise ValueError('Requested timestamp is outside the truth coverage')
     # SimState uses NED positions and FRD body-to-world Hamilton quaternions.
@@ -78,7 +78,9 @@ def interpolate_truth(rows, timestamps):
     positions = np.column_stack([np.interp(timestamps, rows[:, 0], rows[:, axis]) for axis in range(1, 4)])
     velocities = np.column_stack([np.interp(timestamps, rows[:, 0], world_velocities[:, axis]) for axis in range(3)])
     orientations = Slerp(rows[:, 0], body_to_ned)(timestamps)
-    return positions, orientations, velocities
+    # Hamilton body-to-ENU coefficients also represent JPL ENU-to-IMU; do not conjugate.
+    return np.column_stack((timestamps, (NED_TO_ENU * orientations).as_quat(),
+                            NED_TO_ENU.apply(positions), NED_TO_ENU.apply(velocities), np.zeros((len(timestamps), 6))))
 
 
 def extract_initial_state(bag_path, start_time):
@@ -89,13 +91,8 @@ def extract_initial_state(bag_path, start_time):
     if imu_time < clock[0, 0] or imu_time > clock[-1, 0]:
         raise ValueError('start_time is outside the IMU coverage')
     truth_time = np.interp(imu_time, clock[:, 0], clock[:, 1])
-    positions, orientations, velocities = interpolate_truth(rows, np.array([truth_time]))
-    # The coefficients of this Hamilton body-to-ENU quaternion also represent
-    # OpenVINS's JPL ENU-to-IMU quaternion. Do not conjugate the coefficients.
-    state = np.concatenate((
-        [imu_time], (NED_TO_ENU * orientations).as_quat()[0],
-        NED_TO_ENU.apply(positions)[0], NED_TO_ENU.apply(velocities)[0], np.zeros(6),
-    ))
+    state = enu_states(rows, np.array([truth_time]))[0]
+    state[0] = imu_time
     print(f'HoloOcean truth start: offset={start_time:.9f}, IMU={imu_time:.9f}, '
           f'simulation={truth_time:.9f}, global ENU p={state[5:8]}, v={state[8:11]}', file=sys.stderr)
     return state.tolist()
@@ -103,72 +100,13 @@ def extract_initial_state(bag_path, start_time):
 
 def export_bag_truth(bag_path, output_directory, imu_topic):
     rows, clock, _ = read_bag_truth(bag_path, None, imu_topic)
-    positions, orientations, velocities = interpolate_truth(rows, rows[:, 0])
-    # Keep both clocks so the C++ runner performs the same interpolation as this reader.
-    states = np.column_stack((
-        rows[:, 0], (NED_TO_ENU * orientations).as_quat(),
-        NED_TO_ENU.apply(positions), NED_TO_ENU.apply(velocities), np.zeros((len(rows), 6)),
-    ))
+    states = enu_states(rows, rows[:, 0])
     output_directory.mkdir(parents=True, exist_ok=True)
     np.savetxt(output_directory / 'truth.csv', states, delimiter=',', fmt='%.17g', comments='',
                header='timestamp,q_x,q_y,q_z,q_w,p_x,p_y,p_z,v_x,v_y,v_z,bg_x,bg_y,bg_z,ba_x,ba_y,ba_z')
     np.savetxt(output_directory / 'clock.csv', clock, delimiter=',', fmt='%.17g', comments='',
                header='imu_timestamp,simulation_timestamp')
 
-
-def load_bag_reference(bag_path, estimate, camera_imu_offset):
-    rows, clock, _ = read_bag_truth(bag_path, None, '/imu/data')
-    estimate = np.sort(estimate, order='timestamp').copy()
-    imu_times = estimate['timestamp'] + camera_imu_offset
-    overlap = (imu_times >= clock[0, 0]) & (imu_times <= clock[-1, 0])
-    estimate = estimate[overlap]
-    reference_times = np.interp(imu_times[overlap], clock[:, 0], clock[:, 1])
-    overlap = (reference_times >= rows[0, 0]) & (reference_times <= rows[-1, 0])
-    estimate = estimate[overlap]
-    reference_times = reference_times[overlap]
-    if estimate.size < 2:
-        raise ValueError(f'Fewer than two estimate timestamps overlap truth in {bag_path}')
-    timestamps = estimate['timestamp']
-    positions, interpolated_rotations, velocities = interpolate_truth(rows, reference_times)
-    truth = np.empty(estimate.size, dtype=[(name, float) for name in (
-        'timestamp', 'p_x', 'p_y', 'p_z', 'q_x', 'q_y', 'q_z', 'q_w', 'v_x', 'v_y', 'v_z',
-    )])
-    truth['timestamp'] = timestamps
-    for axis, name in enumerate(('x', 'y', 'z')):
-        truth[f'p_{name}'] = positions[:, axis]
-        truth[f'v_{name}'] = velocities[:, axis]
-    truth_quaternions = interpolated_rotations.as_quat()
-    for axis, name in enumerate(('x', 'y', 'z', 'w')):
-        truth[f'q_{name}'] = truth_quaternions[:, axis]
-    enu_to_ned = NED_TO_ENU
-    # OpenVINS stores JPL global-to-IMU quaternions. Interpreted as Hamilton
-    # quaternions by SciPy, the same coefficients represent IMU-to-global.
-    estimate_rotations = enu_to_ned * Rotation.from_quat(np.column_stack([
-        estimate[f'q_{name}'] for name in ('x', 'y', 'z', 'w')
-    ]))
-    positions = enu_to_ned.apply(np.column_stack([estimate[f'p_{name}'] for name in ('x', 'y', 'z')]))
-    velocities = enu_to_ned.apply(np.column_stack([estimate[f'v_{name}'] for name in ('x', 'y', 'z')]))
-    quaternions = estimate_rotations.as_quat()
-    for axis, name in enumerate(('x', 'y', 'z')):
-        estimate[f'p_{name}'] = positions[:, axis]
-        estimate[f'v_{name}'] = velocities[:, axis]
-    for axis, name in enumerate(('x', 'y', 'z', 'w')):
-        estimate[f'q_{name}'] = quaternions[:, axis]
-    # Position and velocity uncertainties are world-frame quantities. Attitude
-    # covariance is a body-frame perturbation and is unchanged by this world-frame conversion.
-    rotation = enu_to_ned.as_matrix()
-    for start in (3, 6):
-        covariance = np.array([
-            [estimate[f'cov_{row}_{column}'] for column in range(start, start + 3)]
-            for row in range(start, start + 3)
-        ]).transpose(2, 0, 1)
-        covariance = rotation @ covariance @ rotation.T
-        for row in range(3):
-            for column in range(3):
-                estimate[f'cov_{start + row}_{start + column}'] = covariance[:, row, column]
-    print(f'Bag reference: {bag_path}/sim/truth_state; NED, fixed global frame, no alignment fit')
-    print(f'Using {estimate.size} estimates over {timestamps[-1] - timestamps[0]:.3f} seconds')
-    return truth, estimate
 
 
 if __name__ == '__main__':

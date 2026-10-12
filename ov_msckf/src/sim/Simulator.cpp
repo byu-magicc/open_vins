@@ -475,7 +475,7 @@ std::vector<std::pair<size_t, Eigen::VectorXf>> Simulator::project_pointcloud(co
     Eigen::Vector3d p_FinC = R_ItoC * p_FinI + p_IinC;
 
     // Skip cloud if too far away
-    if (!params.sim_use_ground_plane_features && (p_FinC(2) > params.sim_max_feature_gen_distance || p_FinC(2) < 0.1))
+    if (p_FinC(2) < 0.1 || (!params.sim_use_ground_plane_features && p_FinC(2) > params.sim_max_feature_gen_distance))
       continue;
 
     // Project to normalized coordinates
@@ -530,8 +530,8 @@ void Simulator::generate_points(const Eigen::Matrix3d &R_GtoI, const Eigen::Vect
     // Undistort this point to our normalized coordinates
     cv::Point2f uv_norm = camera->undistort_cv(uv_dist);
 
-    // Check which kind of point generation we're using
-    Eigen::Vector3d p_FinG = Eigen::Vector3d::Zero();
+    Eigen::Vector3d bearing(uv_norm.x, uv_norm.y, 1);
+    Eigen::Vector3d p_FinG;
     if (!params.sim_use_ground_plane_features) {
 
       // Generate a random depth
@@ -539,8 +539,6 @@ void Simulator::generate_points(const Eigen::Matrix3d &R_GtoI, const Eigen::Vect
       double depth = gen_depth(gen_state_init);
 
       // Get the 3d point
-      Eigen::Vector3d bearing;
-      bearing << uv_norm.x, uv_norm.y, 1;
       Eigen::Vector3d p_FinC;
       p_FinC = depth * bearing;
 
@@ -555,19 +553,16 @@ void Simulator::generate_points(const Eigen::Matrix3d &R_GtoI, const Eigen::Vect
                                                                   0.5 * params.sim_ground_plane_features_range);
       double height_deviation = get_height_deviation(gen_state_init);
 
-      // Calculate the bearing of the point in camera frame
-      Eigen::Vector3d bearing;
-      bearing << uv_norm.x, uv_norm.y, 1;
-      bearing.normalize();  // Ensures alpha is distance in meters
-
       // Rotate bearing to global frame
       Eigen::Vector3d bearing_global = R_CtoG * bearing;
 
-      // Calculate the distance from the camera to the deviated ground plane
-      double alpha = (height_deviation - p_CinG(2)) / bearing_global(2);
+      // Intersect the ray with the ground height; near-horizontal rays have no useful intersection.
+      if (std::abs(bearing_global(2)) < 1e-8)
+        continue;
+      const double alpha = (height_deviation - p_CinG(2)) / bearing_global(2);
 
       // Skip point if it is behind the camera
-      if (alpha <= 0) {
+      if (!std::isfinite(alpha) || alpha <= 0) {
         continue;
       }
 

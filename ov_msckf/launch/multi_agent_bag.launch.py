@@ -2,9 +2,11 @@ import math
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
+
+sys.path.insert(0, os.path.dirname(__file__))
+from openvins_launch import graph_arguments, graph_parameters, camera_parameters, extract_truth, rviz_configuration
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -50,6 +52,7 @@ def launch_setup(context):
         imu_topic = imu_configuration["imu0"]["rostopic"]
 
     parameters = {
+        **graph_parameters(),
         "agent_names": names,
         "bag_paths": bags,
         "bag_starts": starts,
@@ -57,16 +60,10 @@ def launch_setup(context):
         "config_path": config_path,
         "topic_imu": imu_topic,
         "verbosity": LaunchConfiguration("verbosity"),
-        "filter_type": LaunchConfiguration("filter_type"),
-        "relinearize_skip": ParameterValue(LaunchConfiguration("relinearize_skip"), value_type=int),
-        "relinearize_threshold": ParameterValue(LaunchConfiguration("relinearize_threshold"), value_type=float),
-        "use_qr": ParameterValue(LaunchConfiguration("use_qr"), value_type=bool),
         "range_stddev": ParameterValue(LaunchConfiguration("range_stddev"), value_type=float),
         "range_interval": ParameterValue(LaunchConfiguration("range_interval"), value_type=float),
         "range_jitter_fraction": ParameterValue(LaunchConfiguration("range_jitter_fraction"), value_type=float),
         "sim_seed_measurements": ParameterValue(LaunchConfiguration("seed"), value_type=int),
-        "save_results": ParameterValue(LaunchConfiguration("save_results"), value_type=bool),
-        "results_path": ParameterValue(LaunchConfiguration("results_path"), value_type=str),
         "visualize": ParameterValue(LaunchConfiguration("rviz_enable"), value_type=bool),
     }
     for name, value_type in (
@@ -75,47 +72,24 @@ def launch_setup(context):
     ):
         if LaunchConfiguration(name).perform(context):
             parameters[name] = ParameterValue(LaunchConfiguration(name), value_type=value_type)
-    camera_topics = LaunchConfiguration("camera_topics").perform(context)
-    if camera_topics:
-        parameters["camera_topics"] = [topic.strip() for topic in camera_topics.split(",")]
-    for index in range(2):
-        topic = LaunchConfiguration("topic_camera" + str(index)).perform(context)
-        if topic:
-            parameters["topic_camera" + str(index)] = topic
+    parameters.update(camera_parameters(context))
 
     temporary_directory = tempfile.mkdtemp(prefix="openvins_multi_agent_bag_")
     try:
         truth_paths = []
-        utility = os.path.join(package_directory, "scripts", "holoocean_truth.py")
         for name, bag in zip(names, bags):
             truth_path = os.path.join(temporary_directory, name)
-            result = subprocess.run(
-                [os.environ.get("PLOTTER_PYTHON", sys.executable), utility, bag,
-                 "--export-dir", truth_path, "--topic-imu", imu_topic],
-                capture_output=True, text=True, check=False,
-            )
-            if result.stderr:
-                print(result.stderr, end="", file=sys.stderr)
-            if result.returncode:
-                raise RuntimeError(f"Unable to extract HoloOcean truth for {name}; see the extraction error above")
+            extract_truth(bag, ["--export-dir", truth_path, "--topic-imu", imu_topic])
             truth_paths.append(truth_path)
         parameters["truth_paths"] = truth_paths
 
         rviz_config_path = LaunchConfiguration("rviz_config_path").perform(context)
         if IfCondition(LaunchConfiguration("rviz_enable")).evaluate(context) and not rviz_config_path:
-            with open(os.path.join(package_directory, "launch", "display_multi_agent_ros2.rviz"), encoding="utf-8") as template_file:
-                template = template_file.read()
-            before, separator, agent_template = template.partition("# BEGIN AGENT TEMPLATE\n")
-            if not separator:
-                raise RuntimeError("Multi-agent RViz template is missing its start marker")
-            agent_template, separator, after = agent_template.partition("# END AGENT TEMPLATE\n")
-            if not separator:
-                raise RuntimeError("Multi-agent RViz template is missing its end marker")
-            namespace = LaunchConfiguration("namespace").perform(context).strip("/")
-            displays = "".join(agent_template.replace("{namespace}", namespace).replace("{agent}", name) for name in names)
+            namespace = LaunchConfiguration("namespace").perform(context)
+            configuration = rviz_configuration(names, namespace)
             rviz_config_path = os.path.join(temporary_directory, "multi_agent.rviz")
             with open(rviz_config_path, "w", encoding="utf-8") as rviz_file:
-                rviz_file.write(before + displays + after)
+                rviz_file.write(configuration)
 
         def remove_temporary_files(event, launch_context):
             del event, launch_context
@@ -147,6 +121,7 @@ def launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        *graph_arguments(1),
         DeclareLaunchArgument("bag_paths", description="Comma-separated HoloOcean ROS 2 bag directories or files"),
         DeclareLaunchArgument("agent_names", default_value="center,left,right"),
         DeclareLaunchArgument("bag_starts", default_value="", description="One start offset per bag, relative to its first IMU header; empty uses zeros"),
@@ -164,16 +139,10 @@ def generate_launch_description():
         DeclareLaunchArgument("publish_global_to_imu_tf", default_value=""),
         DeclareLaunchArgument("publish_calibration_tf", default_value=""),
         DeclareLaunchArgument("verbosity", default_value="INFO"),
-        DeclareLaunchArgument("filter_type", default_value="openvins", description="openvins, factor_graph, or hybrid"),
-        DeclareLaunchArgument("relinearize_skip", default_value="1"),
-        DeclareLaunchArgument("relinearize_threshold", default_value="0.1"),
-        DeclareLaunchArgument("use_qr", default_value="false"),
         DeclareLaunchArgument("range_stddev", default_value="1.0", description="Range noise standard deviation in meters"),
         DeclareLaunchArgument("range_interval", default_value="45.0", description="Nominal range interval per pair in seconds"),
         DeclareLaunchArgument("range_jitter_fraction", default_value="0.5"),
         DeclareLaunchArgument("seed", default_value="5"),
-        DeclareLaunchArgument("save_results", default_value="false"),
-        DeclareLaunchArgument("results_path", default_value="results"),
         DeclareLaunchArgument("rviz_enable", default_value="false"),
         DeclareLaunchArgument("rviz_config_path", default_value=""),
         OpaqueFunction(function=launch_setup),

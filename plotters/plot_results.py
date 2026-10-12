@@ -7,12 +7,9 @@ Usage:
 The results directory may either be one agent directory, or a directory whose
 immediate children are agent directories. Each agent directory must contain
 ``estimate.csv`` and ``groundtruth.csv`` as written with ``save_results:=true``.
-With ``--truth-bag BAG_DIRECTORY``, one agent is compared against the bagged
-HoloOcean ``/sim/truth_state`` instead, comparing global coordinates without
-fitting position or yaw.
 If present, the fleet-level ``ranges.csv`` supplies range-event annotations.
-The script writes the same three SVG plots and NPZ data archive as the former
-ROS plotter into the output directory.
+The script writes three SVG plots. The input CSVs retain the complete recorded
+states, covariance, ground truth, and range measurements.
 """
 
 import argparse
@@ -26,110 +23,71 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 
-from holoocean_truth import load_bag_reference
+from result_io import STATE_COLUMNS, load_csv, state_matrix
 
-
-def load_csv(path, required_columns):
-    if not path.is_file():
-        raise ValueError(f"Missing input file: {path}")
-    data = np.atleast_1d(np.genfromtxt(path, delimiter=',', names=True, dtype=float))
-    missing = sorted(set(required_columns) - set(data.dtype.names or ()))
-    if missing:
-        raise ValueError(f"{path} is missing columns: {', '.join(missing)}")
-    if 'valid' in (data.dtype.names or ()):
-        data = data[data['valid'] == 1]
-    if data.size == 0:
-        raise ValueError(f"{path} contains no valid result rows")
-    if not np.all(np.isfinite(np.column_stack([data[column] for column in required_columns]))):
-        raise ValueError(f'{path} contains non-finite state or covariance values')
-    timestamps = np.asarray(data['timestamp'], dtype=float)
-    if not np.all(np.isfinite(timestamps)) or np.unique(timestamps).size != timestamps.size:
-        raise ValueError(f"{path} has invalid or duplicate timestamps")
-    return data
 
 
 class DataPlotter:
-    def __init__(self, results_directory, output_directory, truth_bag, camera_imu_offset, holoocean):
+    def __init__(self, results_directory, output_directory, holoocean):
         self.output_directory = output_directory
-        if truth_bag is None:
-            enu_to_ned = R.from_matrix([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
-            frd_to_flu = R.from_euler('x', np.pi)
-        if (results_directory / 'estimate.csv').is_file() and (truth_bag is not None or (results_directory / 'groundtruth.csv').is_file()):
+        enu_to_ned = R.from_matrix([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
+        frd_to_flu = R.from_euler('x', np.pi)
+        if (results_directory / 'estimate.csv').is_file() and (results_directory / 'groundtruth.csv').is_file():
             agent_directories = [results_directory]
         else:
             agent_directories = sorted(
                 directory for directory in results_directory.iterdir()
                 if directory.is_dir()
                 and (directory / 'estimate.csv').is_file()
-                and (truth_bag is not None or (directory / 'groundtruth.csv').is_file())
+                and (directory / 'groundtruth.csv').is_file()
             )
         if not agent_directories:
             raise ValueError(f"No agent results found in {results_directory}")
 
-        if truth_bag is not None and len(agent_directories) != 1:
-            raise ValueError('Bag plotting requires exactly one agent result directory')
-
-        state_columns = (
-            'timestamp', 'q_x', 'q_y', 'q_z', 'q_w', 'p_x', 'p_y', 'p_z', 'v_x', 'v_y', 'v_z'
-        )
+        state_columns = ('timestamp',) + STATE_COLUMNS[:10]
         estimator_columns = state_columns + tuple(f'cov_{index}_{index}' for index in range(9))
 
         self.time_data = {}
         self.global_truth_data = {}
         self.global_estimate_data = {}
         self.global_position_std = {}
-        if truth_bag is not None:
-            estimator_columns += tuple(
-                f'cov_{row}_{column}' for start in (3, 6)
-                for row in range(start, start + 3) for column in range(start, start + 3) if row != column
-            )
-
         self.global_orientation_std = {}
         self.global_truth_velocity = {}
         self.global_estimate_velocity = {}
         self.global_velocity_std = {}
         for directory in agent_directories:
-            estimate = load_csv(directory / 'estimate.csv', estimator_columns)
-            if truth_bag is not None:
-                truth, estimate = load_bag_reference(truth_bag, estimate, camera_imu_offset)
-                timestamps = estimate['timestamp']
-            else:
-                truth = load_csv(directory / 'groundtruth.csv', state_columns)
-                timestamps, truth_indices, estimate_indices = np.intersect1d(
-                    truth['timestamp'], estimate['timestamp'], return_indices=True,
-                )
-                if timestamps.size < 2:
-                    raise ValueError(f"Fewer than two timestamps match in {directory}")
-                dropped = truth.size + estimate.size - 2 * timestamps.size
-                truth = truth[truth_indices]
-                estimate = estimate[estimate_indices]
-                if dropped:
-                    print(f"Dropped {dropped} unmatched rows in {directory}")
+            estimate = load_csv(directory / 'estimate.csv', estimator_columns, True)
+            truth = load_csv(directory / 'groundtruth.csv', state_columns, True)
+            timestamps, truth_indices, estimate_indices = np.intersect1d(
+                truth['timestamp'], estimate['timestamp'], return_indices=True,
+            )
+            if timestamps.size < 2:
+                raise ValueError(f"Fewer than two timestamps match in {directory}")
+            dropped = truth.size + estimate.size - 2 * timestamps.size
+            truth = truth[truth_indices]
+            estimate = estimate[estimate_indices]
+            if dropped:
+                print(f"Dropped {dropped} unmatched rows in {directory}")
 
             key = directory.name
             self.time_data[key] = timestamps
-            self.global_truth_data[key] = np.column_stack([
-                truth['p_x'], truth['p_y'], truth['p_z'],
-                truth['q_x'], truth['q_y'], truth['q_z'], truth['q_w'],
-            ])
-            self.global_estimate_data[key] = np.column_stack([
-                estimate['p_x'], estimate['p_y'], estimate['p_z'],
-                estimate['q_x'], estimate['q_y'], estimate['q_z'], estimate['q_w'],
-            ])
-            self.global_truth_velocity[key] = np.column_stack([truth[f'v_{axis}'] for axis in ('x', 'y', 'z')])
-            self.global_estimate_velocity[key] = np.column_stack([estimate[f'v_{axis}'] for axis in ('x', 'y', 'z')])
+            truth_state = state_matrix(truth, STATE_COLUMNS[:10])
+            estimate_state = state_matrix(estimate, STATE_COLUMNS[:10])
+            self.global_truth_data[key] = np.column_stack([truth_state[:, 4:7], truth_state[:, :4]])
+            self.global_estimate_data[key] = np.column_stack([estimate_state[:, 4:7], estimate_state[:, :4]])
+            self.global_truth_velocity[key] = truth_state[:, 7:10]
+            self.global_estimate_velocity[key] = estimate_state[:, 7:10]
             std = np.sqrt(np.maximum(0, np.column_stack([estimate[f'cov_{index}_{index}'] for index in range(9)])))
-            if truth_bag is None:
-                # HoloOcean CSVs already use an FRD body; other simulations use FLU.
-                for state in (self.global_truth_data[key], self.global_estimate_data[key]):
-                    state[:, :3] = enu_to_ned.apply(state[:, :3])
-                    rotations = enu_to_ned * R.from_quat(state[:, 3:])
-                    if not holoocean:
-                        rotations = rotations * frd_to_flu
-                    state[:, 3:] = rotations.as_quat()
-                self.global_truth_velocity[key] = enu_to_ned.apply(self.global_truth_velocity[key])
-                self.global_estimate_velocity[key] = enu_to_ned.apply(self.global_estimate_velocity[key])
-                std = std[:, [0, 1, 2, 4, 3, 5, 7, 6, 8]]
+            # HoloOcean CSVs already use an FRD body; other simulations use FLU.
+            for state in (self.global_truth_data[key], self.global_estimate_data[key]):
+                state[:, :3] = enu_to_ned.apply(state[:, :3])
+                rotations = enu_to_ned * R.from_quat(state[:, 3:])
+                if not holoocean:
+                    rotations = rotations * frd_to_flu
+                state[:, 3:] = rotations.as_quat()
+            self.global_truth_velocity[key] = enu_to_ned.apply(self.global_truth_velocity[key])
+            self.global_estimate_velocity[key] = enu_to_ned.apply(self.global_estimate_velocity[key])
+            std = std[:, [0, 1, 2, 4, 3, 5, 7, 6, 8]]
             self.global_orientation_std[key] = std[:, :3]
             self.global_position_std[key] = std[:, 3:6]
             self.global_velocity_std[key] = std[:, 6:9]
@@ -208,32 +166,15 @@ class DataPlotter:
             range_times[key].sort()
         fleet_range_times.sort()
 
-        # Get filenames for saving plots and data
+        # Get filenames for saving plots
         plots_directory = self.output_directory
         os.makedirs(plots_directory, exist_ok=True)
-        data_filename = os.path.join(plots_directory, 'data.npz')
         global_xy_position_and_error_filename = os.path.join(
             plots_directory, 'global_xy_position_and_error.svg')
         global_position_filename = os.path.join(
             plots_directory, 'global_position.svg')
         global_error_filename = os.path.join(
             plots_directory, 'global_error.svg')
-
-        # Save all data to a .npz file
-        data = {}
-        for key in self.global_truth_data.keys():
-            data[f'{key}_time'] = time[key]
-            data[f'{key}_global_truth_position'] = global_truth_position[key]
-            data[f'{key}_global_truth_orientation'] = global_truth_orientation[key]
-            data[f'{key}_global_estimate_position'] = global_estimate_position[key]
-            data[f'{key}_global_position_std'] = global_position_std[key]
-            data[f'{key}_global_estimate_orientation'] = global_estimate_orientation[key]
-            data[f'{key}_global_orientation_std'] = global_orientation_std[key]
-            data[f'{key}_global_truth_velocity'] = self.global_truth_velocity[key]
-            data[f'{key}_global_estimate_velocity'] = self.global_estimate_velocity[key]
-            data[f'{key}_global_velocity_std'] = self.global_velocity_std[key]
-        np.savez(data_filename, **data)
-
 
         ### Process data prior to plotting ###
 
@@ -341,19 +282,17 @@ class DataPlotter:
             fig.savefig(filename)
             plt.close(fig)
 
-        print(f'Plots generated and data saved in {plots_directory}')
+        print(f'Plots generated in {plots_directory}')
 
 
 def main():
     parser = argparse.ArgumentParser(description='Plot recorded OpenVINS results for one or more agents.')
     parser.add_argument('results_directory', type=Path)
     parser.add_argument('output_directory', type=Path)
-    parser.add_argument('--truth-bag', type=Path, help='HoloOcean bag directory containing /sim/truth_state')
-    parser.add_argument('--camera-imu-offset', type=float, default=0.0, help='IMU timestamp minus camera timestamp (seconds)')
     parser.add_argument('--holoocean', action='store_true', help='Plot exported HoloOcean ENU/FRD CSVs in NED/FRD')
     args = parser.parse_args()
     try:
-        DataPlotter(args.results_directory, args.output_directory, args.truth_bag, args.camera_imu_offset, args.holoocean).plot_data()
+        DataPlotter(args.results_directory, args.output_directory, args.holoocean).plot_data()
     except (ValueError, OSError) as error:
         parser.exit(1, f'Error: {error}\n')
 
