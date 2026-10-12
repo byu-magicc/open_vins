@@ -49,7 +49,7 @@ def load_csv(path, required_columns):
 
 
 class DataPlotter:
-    def __init__(self, results_directory, output_directory, truth_bag, camera_imu_offset):
+    def __init__(self, results_directory, output_directory, truth_bag, camera_imu_offset, holoocean):
         self.output_directory = output_directory
         if truth_bag is None:
             enu_to_ned = R.from_matrix([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
@@ -120,10 +120,13 @@ class DataPlotter:
             self.global_estimate_velocity[key] = np.column_stack([estimate[f'v_{axis}'] for axis in ('x', 'y', 'z')])
             std = np.sqrt(np.maximum(0, np.column_stack([estimate[f'cov_{index}_{index}'] for index in range(9)])))
             if truth_bag is None:
-                # Simulation CSVs use a Z-up world and IMU body; plot in NED/FRD.
+                # HoloOcean CSVs already use an FRD body; other simulations use FLU.
                 for state in (self.global_truth_data[key], self.global_estimate_data[key]):
                     state[:, :3] = enu_to_ned.apply(state[:, :3])
-                    state[:, 3:] = (enu_to_ned * R.from_quat(state[:, 3:]) * frd_to_flu).as_quat()
+                    rotations = enu_to_ned * R.from_quat(state[:, 3:])
+                    if not holoocean:
+                        rotations = rotations * frd_to_flu
+                    state[:, 3:] = rotations.as_quat()
                 self.global_truth_velocity[key] = enu_to_ned.apply(self.global_truth_velocity[key])
                 self.global_estimate_velocity[key] = enu_to_ned.apply(self.global_estimate_velocity[key])
                 std = std[:, [0, 1, 2, 4, 3, 5, 7, 6, 8]]
@@ -347,9 +350,10 @@ def main():
     parser.add_argument('output_directory', type=Path)
     parser.add_argument('--truth-bag', type=Path, help='HoloOcean bag directory containing /sim/truth_state')
     parser.add_argument('--camera-imu-offset', type=float, default=0.0, help='IMU timestamp minus camera timestamp (seconds)')
+    parser.add_argument('--holoocean', action='store_true', help='Plot exported HoloOcean ENU/FRD CSVs in NED/FRD')
     args = parser.parse_args()
     try:
-        DataPlotter(args.results_directory, args.output_directory, args.truth_bag, args.camera_imu_offset).plot_data()
+        DataPlotter(args.results_directory, args.output_directory, args.truth_bag, args.camera_imu_offset, args.holoocean).plot_data()
     except (ValueError, OSError) as error:
         parser.exit(1, f'Error: {error}\n')
 

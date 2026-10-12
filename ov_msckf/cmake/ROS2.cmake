@@ -106,10 +106,15 @@ ament_target_dependencies(run_simulation ${ament_libraries})
 target_link_libraries(run_simulation ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS run_simulation DESTINATION lib/${PROJECT_NAME})
 
-add_executable(run_bag src/run_bag.cpp)
+add_executable(run_bag src/run_bag.cpp src/ros/BagPlayer.cpp)
 ament_target_dependencies(run_bag ${ament_libraries} message_filters rosbag2_cpp)
 target_link_libraries(run_bag ov_msckf_lib ${thirdparty_libraries})
 install(TARGETS run_bag DESTINATION lib/${PROJECT_NAME})
+
+add_executable(run_multi_agent_bag src/run_multi_agent_bag.cpp src/ros/BagPlayer.cpp src/ros/BagTruth.cpp)
+ament_target_dependencies(run_multi_agent_bag ${ament_libraries} message_filters rosbag2_cpp)
+target_link_libraries(run_multi_agent_bag ov_msckf_lib ${thirdparty_libraries})
+install(TARGETS run_multi_agent_bag DESTINATION lib/${PROJECT_NAME})
 
 add_executable(run_multi_agent_simulation src/run_multi_agent_simulation.cpp)
 ament_target_dependencies(run_multi_agent_simulation ${ament_libraries})

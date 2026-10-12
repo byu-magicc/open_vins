@@ -12,7 +12,7 @@ from scipy.spatial.transform import Rotation, Slerp
 NED_TO_ENU = Rotation.from_matrix([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
 
 
-def read_bag_truth(bag_path, offset_interval):
+def read_bag_truth(bag_path, offset_interval, imu_topic):
     try:
         from rosbags.highlevel import AnyReader, AnyReaderError
     except ImportError as error:
@@ -23,13 +23,13 @@ def read_bag_truth(bag_path, offset_interval):
     try:
         with AnyReader([Path(bag_path)]) as reader:
             truth_connections = [c for c in reader.connections if c.topic == '/sim/truth_state']
-            imu_connections = [c for c in reader.connections if c.topic == '/imu/data']
+            imu_connections = [c for c in reader.connections if c.topic == imu_topic]
             if not truth_connections or not imu_connections:
-                raise ValueError(f'{bag_path} requires /sim/truth_state and /imu/data')
+                raise ValueError(f'{bag_path} requires /sim/truth_state and {imu_topic}')
             if any(c.msgtype != 'rosflight_msgs/msg/SimState' for c in truth_connections):
                 raise ValueError('Expected SimState on /sim/truth_state')
             if any(c.msgtype != 'sensor_msgs/msg/Imu' for c in imu_connections):
-                raise ValueError('Expected sensor_msgs/Imu on /imu/data')
+                raise ValueError(f'Expected sensor_msgs/Imu on {imu_topic}')
             first = next(reader.messages(connections=imu_connections), None)
             if first is None:
                 raise ValueError(f'{bag_path} has no IMU samples')
@@ -43,7 +43,7 @@ def read_bag_truth(bag_path, offset_interval):
                     connections=truth_connections + imu_connections, start=start, stop=stop):
                 message = reader.deserialize(raw, connection.msgtype)
                 timestamp = message.header.stamp.sec + message.header.stamp.nanosec * 1e-9
-                if connection.topic == '/imu/data':
+                if connection.topic == imu_topic:
                     clock.append([timestamp, recorded * 1e-9])
                     continue
                 position = message.pose.position
@@ -84,7 +84,7 @@ def interpolate_truth(rows, timestamps):
 def extract_initial_state(bag_path, start_time):
     if not np.isfinite(start_time) or start_time < 0:
         raise ValueError('start_time must be finite and nonnegative')
-    rows, clock, first_imu_time = read_bag_truth(bag_path, (start_time, start_time))
+    rows, clock, first_imu_time = read_bag_truth(bag_path, (start_time, start_time), '/imu/data')
     imu_time = first_imu_time + start_time
     if imu_time < clock[0, 0] or imu_time > clock[-1, 0]:
         raise ValueError('start_time is outside the IMU coverage')
@@ -101,8 +101,23 @@ def extract_initial_state(bag_path, start_time):
     return state.tolist()
 
 
+def export_bag_truth(bag_path, output_directory, imu_topic):
+    rows, clock, _ = read_bag_truth(bag_path, None, imu_topic)
+    positions, orientations, velocities = interpolate_truth(rows, rows[:, 0])
+    # Keep both clocks so the C++ runner performs the same interpolation as this reader.
+    states = np.column_stack((
+        rows[:, 0], (NED_TO_ENU * orientations).as_quat(),
+        NED_TO_ENU.apply(positions), NED_TO_ENU.apply(velocities), np.zeros((len(rows), 6)),
+    ))
+    output_directory.mkdir(parents=True, exist_ok=True)
+    np.savetxt(output_directory / 'truth.csv', states, delimiter=',', fmt='%.17g', comments='',
+               header='timestamp,q_x,q_y,q_z,q_w,p_x,p_y,p_z,v_x,v_y,v_z,bg_x,bg_y,bg_z,ba_x,ba_y,ba_z')
+    np.savetxt(output_directory / 'clock.csv', clock, delimiter=',', fmt='%.17g', comments='',
+               header='imu_timestamp,simulation_timestamp')
+
+
 def load_bag_reference(bag_path, estimate, camera_imu_offset):
-    rows, clock, _ = read_bag_truth(bag_path, None)
+    rows, clock, _ = read_bag_truth(bag_path, None, '/imu/data')
     estimate = np.sort(estimate, order='timestamp').copy()
     imu_times = estimate['timestamp'] + camera_imu_offset
     overlap = (imu_times >= clock[0, 0]) & (imu_times <= clock[-1, 0])
@@ -159,9 +174,16 @@ def load_bag_reference(bag_path, estimate, camera_imu_offset):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Extract a global ENU HoloOcean truth state from a bag.')
     parser.add_argument('bag_path', type=Path)
-    parser.add_argument('start_time', type=float, help='Seconds from the first /imu/data header timestamp')
+    parser.add_argument('start_time', type=float, nargs='?', help='Seconds from the first /imu/data header timestamp')
+    parser.add_argument('--export-dir', type=Path, help='Export ENU truth and clock CSVs for multi-agent bag playback')
+    parser.add_argument('--topic-imu', default='/imu/data', help='IMU topic used for the exported clock mapping')
     arguments = parser.parse_args()
     try:
-        print(json.dumps(extract_initial_state(arguments.bag_path, arguments.start_time), allow_nan=False))
+        if arguments.export_dir is not None:
+            export_bag_truth(arguments.bag_path, arguments.export_dir, arguments.topic_imu)
+        elif arguments.start_time is not None:
+            print(json.dumps(extract_initial_state(arguments.bag_path, arguments.start_time), allow_nan=False))
+        else:
+            parser.error('start_time is required unless --export-dir is supplied')
     except (ValueError, OSError) as error:
         parser.exit(1, f'Error: {error}\n')
