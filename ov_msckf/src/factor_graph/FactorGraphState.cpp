@@ -146,8 +146,11 @@ FactorGraphState::FactorGraphState(const VioManagerOptions &options) : agent_id(
 
 void FactorGraphState::feed_imu(const ov_core::ImuData &message) {
   std::lock_guard<std::mutex> lock(mutex);
-  if (!imu_buffer.empty() && message.timestamp <= imu_buffer.back().timestamp)
+  if (!imu_buffer.empty() && message.timestamp <= imu_buffer.back().timestamp) {
+    PRINT_WARNING("[FACTOR-GRAPH]: dropping IMU sample with timestamp %.9f; latest buffered timestamp is %.9f\n", message.timestamp,
+                  imu_buffer.back().timestamp);
     return;
+  }
   imu_buffer.push_back(message);
 }
 
@@ -633,9 +636,9 @@ void FactorGraphState::update_summary(const Summary &summary, size_t origin) {
 }
 
 FactorGraphState::Summary FactorGraphState::get_summary() {
-  commit(true);
   if (shared_keys.empty() || local_shared_keys.empty())
     throw std::logic_error("Cannot summarize a graph without locally relevant shared positions");
+  commit(true);
 
   // Marginalize the entire Bayes-tree Gaussian system at its linearization point.
   gtsam::GaussianFactorGraph gaussian;
@@ -652,6 +655,7 @@ FactorGraphState::Summary FactorGraphState::get_summary() {
     corrected.push_back(entry.second.graph_factor->linearize(values)->negate());
   const gtsam::HessianFactor corrected_dense(corrected);
 
+  // Reduce to variables in local_shared_keys
   gtsam::KeyVector selected_keys;
   std::vector<gtsam::DenseIndex> selected_indices;
   const auto &keys = corrected_dense.keys();
@@ -669,6 +673,8 @@ FactorGraphState::Summary FactorGraphState::get_summary() {
     linear_blocks.push_back(corrected_dense.linearTerm(corrected_dense.begin() + selected_indices[i]));
   }
   const gtsam::HessianFactor reduced(selected_keys, blocks, linear_blocks, corrected_dense.constantTerm());
+
+  // Project onto positive eigenspace, ensuring factor is not singular
   const gtsam::Matrix information = reduced.information();
   Eigen::SelfAdjointEigenSolver<gtsam::Matrix> eigen_solver(0.5 * (information + information.transpose()));
   if (eigen_solver.info() != Eigen::Success)
@@ -692,6 +698,8 @@ FactorGraphState::Summary FactorGraphState::get_summary() {
     jacobian.row(row) = root * eigen_solver.eigenvectors().col(i).transpose();
     rhs(row++) = eigen_solver.eigenvectors().col(i).dot(linear_term) / root;
   }
+
+  // Package information for GTSAM
   std::vector<std::pair<gtsam::Key, gtsam::Matrix>> terms;
   gtsam::Values summary_values;
   offset = 0;
