@@ -292,7 +292,8 @@ void FactorGraphState::add_visual_factors(const std::vector<std::shared_ptr<ov_c
   if (!initialized || failed)
     return;
   for (const auto &feature : features) {
-    auto factor = boost::make_shared<FactorGraphVisualFactor>(camera_rig, sigma_msckf_pixels);
+    auto factor = boost::make_shared<FactorGraphVisualFactor>(camera_rig, sigma_msckf_pixels,
+                                                           optimizer->params().factorization == gtsam::ISAM2Params::QR);
     for (const auto &camera : feature->timestamps) {
       const auto &pixels = feature->uvs.at(camera.first);
       for (size_t index = 0; index < camera.second.size(); ++index) {

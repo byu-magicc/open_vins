@@ -63,12 +63,15 @@ namespace ov_msckf {
 using GraphCamera = gtsam::PinholePose<FixedCameraCalibration>;
 using GraphCameraRig = gtsam::CameraSet<GraphCamera>;
 
-/** Native rig geometry/triangulation with Jacobian output for QR and repeated body-pose keys. */
+/** Native rig factor with Schur-complement Jacobian output when QR is enabled. */
 class FactorGraphVisualFactor : public gtsam::SmartProjectionRigFactor<GraphCamera> {
 public:
-  FactorGraphVisualFactor(const boost::shared_ptr<GraphCameraRig> &rig, double sigma_pixels);
+  FactorGraphVisualFactor(const boost::shared_ptr<GraphCameraRig> &rig, double sigma_pixels, bool use_qr);
   boost::shared_ptr<gtsam::GaussianFactor> linearize(const gtsam::Values &values) const override;
   gtsam::NonlinearFactor::shared_ptr clone() const override;
+
+private:
+  bool use_qr;
 };
 
 /** Native combined IMU factor, preserving OpenVINS biases in raw sensor coordinates. */

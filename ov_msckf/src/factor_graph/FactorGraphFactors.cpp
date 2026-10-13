@@ -41,14 +41,18 @@ gtsam::Point2 FixedCameraCalibration::calibrate(const gtsam::Point2 &point, gtsa
   return result;
 }
 
-FactorGraphVisualFactor::FactorGraphVisualFactor(const boost::shared_ptr<GraphCameraRig> &rig, double sigma_pixels)
+FactorGraphVisualFactor::FactorGraphVisualFactor(const boost::shared_ptr<GraphCameraRig> &rig, double sigma_pixels, bool use_qr)
     : gtsam::SmartProjectionRigFactor<GraphCamera>(gtsam::noiseModel::Isotropic::Sigma(2, sigma_pixels), rig,
-                                                   gtsam::SmartProjectionParams(gtsam::HESSIAN, gtsam::ZERO_ON_DEGENERACY)) {
+                                                   gtsam::SmartProjectionParams(gtsam::HESSIAN, gtsam::ZERO_ON_DEGENERACY)),
+      use_qr(use_qr) {
   params_.triangulation.enableEPI = true;
   params_.triangulation.rankTolerance = 1e-9;
 }
 
 boost::shared_ptr<gtsam::GaussianFactor> FactorGraphVisualFactor::linearize(const gtsam::Values &values) const {
+  if (!use_qr)
+    return gtsam::SmartProjectionRigFactor<GraphCamera>::linearize(values);
+
   const auto cameras = this->cameras(values);
   this->triangulateSafe(cameras);
   std::vector<std::pair<gtsam::Key, gtsam::Matrix>> terms;
@@ -62,16 +66,18 @@ boost::shared_ptr<gtsam::GaussianFactor> FactorGraphVisualFactor::linearize(cons
   gtsam::Vector rhs;
   this->computeJacobiansWithTriangulatedPoint(pose_jacobians, point_jacobian, rhs, cameras);
   noiseModel_->WhitenSystem(point_jacobian, rhs);
-  const Eigen::JacobiSVD<gtsam::Matrix> svd(point_jacobian, Eigen::ComputeFullU);
-  const gtsam::Matrix nullspace = svd.matrixU().rightCols(point_jacobian.rows() - 3);
+  const gtsam::Matrix3 point_covariance = GraphCameraRig::PointCov(point_jacobian);
+  // As in GTSAM's JacobianFactorQ, Q is the Schur projector: Q^T Q = Q.
+  const gtsam::Matrix projector = gtsam::Matrix::Identity(point_jacobian.rows(), point_jacobian.rows()) -
+                                  point_jacobian * point_covariance * point_jacobian.transpose();
   for (gtsam::Key key : keys_) {
-    gtsam::Matrix jacobian = gtsam::Matrix::Zero(nullspace.cols(), 6);
+    gtsam::Matrix jacobian = gtsam::Matrix::Zero(projector.rows(), 6);
     for (size_t index = 0; index < nonUniqueKeys_.size(); ++index)
       if (nonUniqueKeys_[index] == key)
-        jacobian += nullspace.middleRows(2 * index, 2).transpose() * noiseModel_->Whiten(pose_jacobians[index]);
+        jacobian += projector.middleCols(2 * index, 2) * noiseModel_->Whiten(pose_jacobians[index]);
     terms.emplace_back(key, jacobian);
   }
-  return boost::make_shared<gtsam::JacobianFactor>(terms, nullspace.transpose() * rhs);
+  return boost::make_shared<gtsam::JacobianFactor>(terms, projector * rhs);
 }
 
 gtsam::NonlinearFactor::shared_ptr FactorGraphVisualFactor::clone() const {
