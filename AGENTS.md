@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Keep changes compared to the source v2.7 code (commit `93adc241`) minimal. Perform a diff check with this commit on relevant files after working, reverting differences that are no longer needed.
+
 ## Project Structure & Module Organization
 
 OpenVINS is a C++14 visual-inertial estimation project organized as ROS packages, of which this is a fork. `ov_core/` contains camera models, tracking, simulation, and shared types; `ov_init/` implements estimator initialization; `ov_msckf/` contains the filter, factor-graph extension, ROS nodes, launches, and simulation executables; and `ov_eval/` provides trajectory and timing tools. Dataset-specific YAML, calibration, and masks live under `config/`. Small example datasets are in `ov_data/`, documentation sources in `docs/`, and analysis scripts in `plotters/`. Keep code inside the owning package's `src/` tree and update its CMake files when adding targets.
@@ -8,7 +10,7 @@ The goal of this fork is to replicate the performance of OpenVINS with a factor 
 
 ## Build, Test, and Development Commands
 
-The supported fork environment is Ubuntu 24.04 with ROS 2 Jazzy and GTSAM 4.2.2.
+The supported fork environment is Ubuntu 24.04 with ROS 2 Jazzy and GTSAM 4.2.2. As such, leave ROS 1 paths unchanged.
 
 - `podman build -t open_vins .` builds the reproducible development/CI image.
 - Use `colcon build --symlink-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Release` for native ROS environments, run from the ROS2 workspace root.
