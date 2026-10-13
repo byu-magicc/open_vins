@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Shared build, recording, and plotting for the simulation and bag presets.
 
+filter_types=(openvins factor_graph hybrid)
+
 repository_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 workspace_directory=$(cd -- "${repository_directory}/../.." && pwd)
 plotter_python="${PLOTTER_PYTHON:-${workspace_directory}/.venv-plotters/bin/python}"
@@ -40,7 +42,7 @@ run_experiments() {
   mkdir -p "${results_directory}" "${plots_directory}" "${MPLCONFIGDIR}"
 
   local filter_type
-  for filter_type in openvins factor_graph hybrid; do
+  for filter_type in "${filter_types[@]}"; do
     local mode_results="${results_directory}/${filter_type}"
     local mode_plots="${plots_directory}/${filter_type}"
     export ROS_LOG_DIR="${run_directory}/ros_logs/${filter_type}"
@@ -59,7 +61,8 @@ run_experiments() {
     local agent_name
     agent_name=$(basename -- "${agent_directory}")
     "${plotter_python}" "${repository_directory}/plotters/compare_estimators.py" \
-      "${results_directory}" "${agent_name}" "${plots_directory}/${agent_name}_estimator_comparison.svg" "${plot_arguments[@]}"
+      "${results_directory}" "${agent_name}" "${plots_directory}/${agent_name}_estimator_comparison.svg" \
+      --modes "${filter_types[@]}" "${plot_arguments[@]}"
     ((agent_count += 1))
   done
   if ((agent_count == 0)); then
