@@ -84,43 +84,6 @@ gtsam::NonlinearFactor::shared_ptr FactorGraphVisualFactor::clone() const {
   return boost::make_shared<FactorGraphVisualFactor>(*this);
 }
 
-FactorGraphImuFactor::FactorGraphImuFactor(gtsam::Key pose_i, gtsam::Key velocity_i, gtsam::Key pose_j, gtsam::Key velocity_j,
-                                           gtsam::Key bias_i, gtsam::Key bias_j,
-                                           const gtsam::PreintegratedCombinedMeasurements &measurements,
-                                           const gtsam::Matrix6 &raw_to_corrected, const gtsam::Matrix6 &noise_to_raw)
-    : gtsam::CombinedImuFactor(pose_i, velocity_i, pose_j, velocity_j, bias_i, bias_j, measurements), raw_to_corrected(raw_to_corrected) {
-  Eigen::Matrix<double, 15, 15> transform = Eigen::Matrix<double, 15, 15>::Identity();
-  transform.bottomRightCorner<6, 6>() = noise_to_raw;
-  Eigen::Matrix<double, 15, 15> covariance = transform * measurements.preintMeasCov() * transform.transpose();
-  covariance = 0.5 * (covariance + covariance.transpose());
-  covariance.diagonal().array() += 1e-14;
-  noiseModel_ = gtsam::noiseModel::Gaussian::Covariance(covariance);
-}
-
-gtsam::Vector FactorGraphImuFactor::evaluateError(const gtsam::Pose3 &pose_i, const gtsam::Vector3 &velocity_i, const gtsam::Pose3 &pose_j,
-                                                  const gtsam::Vector3 &velocity_j, const gtsam::imuBias::ConstantBias &bias_i,
-                                                  const gtsam::imuBias::ConstantBias &bias_j, boost::optional<gtsam::Matrix &> H1,
-                                                  boost::optional<gtsam::Matrix &> H2, boost::optional<gtsam::Matrix &> H3,
-                                                  boost::optional<gtsam::Matrix &> H4, boost::optional<gtsam::Matrix &> H5,
-                                                  boost::optional<gtsam::Matrix &> H6) const {
-  const gtsam::imuBias::ConstantBias corrected_i(raw_to_corrected * bias_i.vector());
-  const gtsam::imuBias::ConstantBias corrected_j(raw_to_corrected * bias_j.vector());
-  gtsam::Vector error =
-      gtsam::CombinedImuFactor::evaluateError(pose_i, velocity_i, pose_j, velocity_j, corrected_i, corrected_j, H1, H2, H3, H4, H5, H6);
-  error.tail<6>() = bias_i.vector() - bias_j.vector();
-  if (H5) {
-    *H5 = *H5 * raw_to_corrected;
-    H5->bottomRows<6>().setIdentity();
-  }
-  if (H6) {
-    *H6 = *H6 * raw_to_corrected;
-    H6->bottomRows<6>() = -gtsam::Matrix6::Identity();
-  }
-  return error;
-}
-
-gtsam::NonlinearFactor::shared_ptr FactorGraphImuFactor::clone() const { return boost::make_shared<FactorGraphImuFactor>(*this); }
-
 FactorGraphPosePositionFactor::FactorGraphPosePositionFactor(gtsam::Key pose, gtsam::Key position)
     : gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Point3>(gtsam::noiseModel::Isotropic::Sigma(3, 1e-2), pose, position) {}
 

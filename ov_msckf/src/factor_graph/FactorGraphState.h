@@ -15,6 +15,7 @@
 #include "FactorGraphTypes.h"
 
 #include <gtsam/linear/JacobianFactor.h>
+#include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/Values.h>
@@ -99,8 +100,9 @@ private:
   Eigen::Matrix3d accel_calibration;
   Eigen::Matrix3d gyro_calibration;
   Eigen::Matrix3d gravity_sensitivity;
+  // Graph biases are in calibrated IMU coordinates; OpenVINS boundaries use raw sensor biases.
   gtsam::Matrix6 raw_to_corrected;
-  gtsam::Matrix6 noise_to_raw;
+  gtsam::Matrix6 corrected_to_raw;
   double time_offset;
   double sigma_msckf_pixels;
   bool initialized = false;

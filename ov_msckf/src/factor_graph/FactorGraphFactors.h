@@ -14,7 +14,6 @@
 #include <gtsam/geometry/Cal3DS2.h>
 #include <gtsam/geometry/Cal3Fisheye.h>
 #include <gtsam/geometry/PinholePose.h>
-#include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/slam/SmartProjectionRigFactor.h>
 
 namespace ov_msckf {
@@ -72,24 +71,6 @@ public:
 
 private:
   bool use_qr;
-};
-
-/** Native combined IMU factor, preserving OpenVINS biases in raw sensor coordinates. */
-class FactorGraphImuFactor : public gtsam::CombinedImuFactor {
-public:
-  FactorGraphImuFactor(gtsam::Key pose_i, gtsam::Key velocity_i, gtsam::Key pose_j, gtsam::Key velocity_j, gtsam::Key bias_i,
-                       gtsam::Key bias_j, const gtsam::PreintegratedCombinedMeasurements &measurements,
-                       const gtsam::Matrix6 &raw_to_corrected, const gtsam::Matrix6 &noise_to_raw);
-  gtsam::Vector evaluateError(const gtsam::Pose3 &pose_i, const gtsam::Vector3 &velocity_i, const gtsam::Pose3 &pose_j,
-                              const gtsam::Vector3 &velocity_j, const gtsam::imuBias::ConstantBias &bias_i,
-                              const gtsam::imuBias::ConstantBias &bias_j, boost::optional<gtsam::Matrix &> H1 = boost::none,
-                              boost::optional<gtsam::Matrix &> H2 = boost::none, boost::optional<gtsam::Matrix &> H3 = boost::none,
-                              boost::optional<gtsam::Matrix &> H4 = boost::none, boost::optional<gtsam::Matrix &> H5 = boost::none,
-                              boost::optional<gtsam::Matrix &> H6 = boost::none) const override;
-  gtsam::NonlinearFactor::shared_ptr clone() const override;
-
-private:
-  gtsam::Matrix6 raw_to_corrected;
 };
 
 /** Tie an exchanged position to the translation of a local navigation pose. */

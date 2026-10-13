@@ -46,10 +46,6 @@ gtsam::Pose3 imu_pose(const Eigen::Matrix<double, 16, 1> &state) {
   return gtsam::Pose3(gtsam::Rot3(global_to_imu.transpose()), gtsam::Point3(state.segment<3>(4)));
 }
 
-gtsam::imuBias::ConstantBias imu_bias(const Eigen::Matrix<double, 16, 1> &state) {
-  return gtsam::imuBias::ConstantBias(state.segment<3>(13), state.segment<3>(10));
-}
-
 gtsam::Pose3 camera_pose_from_openvins(const Eigen::VectorXd &value) {
   const Eigen::Matrix3d imu_to_camera = ov_core::quat_2_Rot(value.head<4>());
   const Eigen::Matrix3d camera_to_imu = imu_to_camera.transpose();
@@ -120,9 +116,7 @@ FactorGraphState::FactorGraphState(const VioManagerOptions &options) : agent_id(
   raw_to_corrected.topLeftCorner<3, 3>() = accel_calibration;
   raw_to_corrected.bottomLeftCorner<3, 3>() = -gyro_calibration * gravity_sensitivity * accel_calibration;
   raw_to_corrected.bottomRightCorner<3, 3>() = gyro_calibration;
-  noise_to_raw.setZero();
-  noise_to_raw.topLeftCorner<3, 3>() = accel_calibration.inverse();
-  noise_to_raw.bottomRightCorner<3, 3>() = gyro_calibration.inverse();
+  corrected_to_raw = raw_to_corrected.inverse();
 
   preintegration_parameters = gtsam::PreintegrationCombinedParams::MakeSharedU(options.gravity_mag);
   preintegration_parameters->accelerometerCovariance =
@@ -180,14 +174,16 @@ void FactorGraphState::initialize(const FactorGraphInitialization &initializatio
   gtsam::Values initial_values;
   initial_values.insert(initial_frame.pose_key, imu_pose(initialization.imu_state));
   initial_values.insert(initial_frame.velocity_key, gtsam::Vector3(initialization.imu_state.segment<3>(7)));
-  initial_values.insert(initial_frame.bias_key, imu_bias(initialization.imu_state));
+  gtsam::Vector6 raw_bias;
+  raw_bias << initialization.imu_state.segment<3>(13), initialization.imu_state.segment<3>(10);
+  initial_values.insert(initial_frame.bias_key, gtsam::imuBias::ConstantBias(raw_to_corrected * raw_bias));
 
   Eigen::Matrix<double, 15, 15> tangent_transform = Eigen::Matrix<double, 15, 15>::Zero();
   tangent_transform.block<3, 3>(0, 0).setIdentity();
   tangent_transform.block<3, 3>(3, 3) = ov_core::quat_2_Rot(initialization.imu_state.head<4>());
   tangent_transform.block<3, 3>(6, 6).setIdentity();
-  tangent_transform.block<3, 3>(9, 12).setIdentity();
-  tangent_transform.block<3, 3>(12, 9).setIdentity();
+  tangent_transform.block<6, 3>(9, 9) = raw_to_corrected.rightCols<3>();
+  tangent_transform.block<6, 3>(9, 12) = raw_to_corrected.leftCols<3>();
   const Eigen::MatrixXd information =
       covariance_square_root_information(tangent_transform * initialization.covariance * tangent_transform.transpose());
   const std::vector<std::pair<gtsam::Key, gtsam::Matrix>> terms = {{initial_frame.pose_key, information.leftCols<6>()},
@@ -228,8 +224,7 @@ gtsam::PreintegratedCombinedMeasurements FactorGraphState::preintegrate(double s
   const auto samples = Propagator::select_imu_readings(imu_buffer, start + time_offset, end + time_offset);
   if (samples.size() < 2)
     throw std::runtime_error("Insufficient IMU samples for factor-graph propagation");
-  gtsam::PreintegratedCombinedMeasurements measurements(preintegration_parameters,
-                                                        gtsam::imuBias::ConstantBias(raw_to_corrected * bias.vector()));
+  gtsam::PreintegratedCombinedMeasurements measurements(preintegration_parameters, bias);
   for (size_t index = 0; index + 1 < samples.size(); ++index) {
     const auto &first = samples[index];
     const auto &second = samples[index + 1];
@@ -260,11 +255,10 @@ FactorGraphState::Frame &FactorGraphState::ensure_frame(double timestamp) {
   const auto previous_velocity = values.at<gtsam::Vector3>(previous.velocity_key);
   const auto previous_bias = values.at<gtsam::imuBias::ConstantBias>(previous.bias_key);
   const auto measurements = preintegrate(previous.timestamp, timestamp, previous_bias);
-  auto factor = boost::make_shared<FactorGraphImuFactor>(previous.pose_key, previous.velocity_key, pose_key(next_frame_index),
-                                                         velocity_key(next_frame_index), previous.bias_key, bias_key(next_frame_index),
-                                                         measurements, raw_to_corrected, noise_to_raw);
-  const gtsam::NavState prediction = measurements.predict(gtsam::NavState(previous_pose, previous_velocity),
-                                                          gtsam::imuBias::ConstantBias(raw_to_corrected * previous_bias.vector()));
+  auto factor = boost::make_shared<gtsam::CombinedImuFactor>(previous.pose_key, previous.velocity_key, pose_key(next_frame_index),
+                                                             velocity_key(next_frame_index), previous.bias_key, bias_key(next_frame_index),
+                                                             measurements);
+  const gtsam::NavState prediction = measurements.predict(gtsam::NavState(previous_pose, previous_velocity), previous_bias);
 
   Frame frame;
   const size_t frame_index = next_frame_index++;
@@ -371,10 +365,9 @@ EstimatorResult FactorGraphState::get_estimate(double timestamp) {
     const gtsam::Key propagated_velocity_key = velocity_key(next_frame_index);
     const gtsam::Key propagated_bias_key = bias_key(next_frame_index);
     const auto measurements = preintegrate(frame.timestamp, timestamp, bias);
-    FactorGraphImuFactor propagation(frame.pose_key, frame.velocity_key, propagated_pose_key, propagated_velocity_key, frame.bias_key,
-                                     propagated_bias_key, measurements, raw_to_corrected, noise_to_raw);
-    const gtsam::NavState propagated =
-        measurements.predict(gtsam::NavState(pose, velocity), gtsam::imuBias::ConstantBias(raw_to_corrected * bias.vector()));
+    gtsam::CombinedImuFactor propagation(frame.pose_key, frame.velocity_key, propagated_pose_key, propagated_velocity_key, frame.bias_key,
+                                         propagated_bias_key, measurements);
+    const gtsam::NavState propagated = measurements.predict(gtsam::NavState(pose, velocity), bias);
     pose = propagated.pose();
     velocity = propagated.velocity();
 
@@ -404,15 +397,16 @@ EstimatorResult FactorGraphState::get_estimate(double timestamp) {
   estimate.state.segment<4>(0) = ov_core::rot_2_quat(global_to_imu);
   estimate.state.segment<3>(4) = pose.translation();
   estimate.state.segment<3>(7) = velocity;
-  estimate.state.segment<3>(10) = bias.gyroscope();
-  estimate.state.segment<3>(13) = bias.accelerometer();
+  const gtsam::imuBias::ConstantBias raw_bias(corrected_to_raw * bias.vector());
+  estimate.state.segment<3>(10) = raw_bias.gyroscope();
+  estimate.state.segment<3>(13) = raw_bias.accelerometer();
 
   Eigen::Matrix<double, 15, 15> transform = Eigen::Matrix<double, 15, 15>::Zero();
   transform.block<3, 3>(0, 0).setIdentity();
   transform.block<3, 3>(3, 3) = pose.rotation().matrix();
   transform.block<3, 3>(6, 6).setIdentity();
-  transform.block<3, 3>(9, 12).setIdentity();
-  transform.block<3, 3>(12, 9).setIdentity();
+  transform.block<3, 6>(9, 9) = corrected_to_raw.bottomRows<3>();
+  transform.block<3, 6>(12, 9) = corrected_to_raw.topRows<3>();
   try {
     const Eigen::MatrixXd input_covariance = joint_marginal_covariance(*optimizer, propagation_input_keys, propagation_input_dimensions);
     Eigen::Matrix<double, 15, 15> graph_covariance =
@@ -489,13 +483,14 @@ FactorGraphResetSnapshot FactorGraphState::get_reset_snapshot(const std::vector<
         output.segment<4>(0) = ov_core::rot_2_quat(pose.rotation().matrix().transpose());
         output.segment<3>(4) = pose.translation();
         output.segment<3>(7) = velocity;
-        output.segment<3>(10) = bias.gyroscope();
-        output.segment<3>(13) = bias.accelerometer();
+        const gtsam::imuBias::ConstantBias raw_bias(corrected_to_raw * bias.vector());
+        output.segment<3>(10) = raw_bias.gyroscope();
+        output.segment<3>(13) = raw_bias.accelerometer();
         mapping.block<3, 3>(row, key_columns.at(frame.pose_key)).setIdentity();
         mapping.block<3, 3>(row + 3, key_columns.at(frame.pose_key) + 3) = pose.rotation().matrix();
         mapping.block<3, 3>(row + 6, key_columns.at(frame.velocity_key)).setIdentity();
-        mapping.block<3, 3>(row + 9, key_columns.at(frame.bias_key) + 3).setIdentity();
-        mapping.block<3, 3>(row + 12, key_columns.at(frame.bias_key)).setIdentity();
+        mapping.block<3, 6>(row + 9, key_columns.at(frame.bias_key)) = corrected_to_raw.bottomRows<3>();
+        mapping.block<3, 6>(row + 12, key_columns.at(frame.bias_key)) = corrected_to_raw.topRows<3>();
         row += 15;
         break;
       }
