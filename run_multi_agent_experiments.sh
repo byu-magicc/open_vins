@@ -4,10 +4,14 @@ set -eo pipefail
 
 source "$(dirname -- "${BASH_SOURCE[0]}")/experiment_common.sh"
 
+# Select one or more of: openvins factor_graph hybrid.
+filter_types=(openvins factor_graph hybrid)
+
 usage() {
   echo "Usage: $(basename -- "$0") [launch_argument:=value ...]"
   echo
   echo "Build the workspace, run the multi-agent simulation, and generate plots."
+  echo "Selected filters: ${filter_types[*]} (edit filter_types to configure runs)."
   echo "Results are saved under <workspace>/runs/<timestamp>/."
   echo
   echo "Examples:"

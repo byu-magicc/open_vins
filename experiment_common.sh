@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Shared build, recording, and plotting for the simulation and bag presets.
 
-filter_types=(openvins factor_graph hybrid)
-
 repository_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 workspace_directory=$(cd -- "${repository_directory}/../.." && pwd)
 plotter_python="${PLOTTER_PYTHON:-${workspace_directory}/.venv-plotters/bin/python}"
@@ -56,13 +54,15 @@ run_experiments() {
 
   local agent_count=0
   local agent_directory
-  for agent_directory in "${results_directory}/openvins"/*; do
+  for agent_directory in "${results_directory}/${filter_types[0]}"/*; do
     [[ -d "${agent_directory}" ]] || continue
     local agent_name
     agent_name=$(basename -- "${agent_directory}")
-    "${plotter_python}" "${repository_directory}/plotters/compare_estimators.py" \
-      "${results_directory}" "${agent_name}" "${plots_directory}/${agent_name}_estimator_comparison.svg" \
-      --modes "${filter_types[@]}" "${plot_arguments[@]}"
+    if ((${#filter_types[@]} > 1)); then
+      "${plotter_python}" "${repository_directory}/plotters/compare_estimators.py" \
+        "${results_directory}" "${agent_name}" "${plots_directory}/${agent_name}_estimator_comparison.svg" \
+        --modes "${filter_types[@]}" "${plot_arguments[@]}"
+    fi
     ((agent_count += 1))
   done
   if ((agent_count == 0)); then

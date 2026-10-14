@@ -3,13 +3,16 @@
 set -eo pipefail
 
 source "$(dirname -- "${BASH_SOURCE[0]}")/experiment_common.sh"
+# Select one or more of: openvins factor_graph hybrid.
+filter_types=(openvins factor_graph hybrid)
 bags_directory="${workspace_directory}/data/holoocean"
 bag_names=(center_2 left_2 right_2)
 # Seconds from each bag's first /imu/data header; missing entries start at zero with truth initialization.
 declare -A bag_start_times=([center_2]=9.0 [left_2]=12.0 [right_2]=11.0)
 usage() {
   echo "Usage: $(basename -- "$0") [--bags-directory PATH] [launch_argument:=value ...]"
-  echo "Build once, replay the selected bags together in OpenVINS, factor-graph, and hybrid modes, and compare them."
+  echo "Build once, replay the selected bags together for each selected filter, and generate plots."
+  echo "Selected filters: ${filter_types[*]} (edit filter_types to configure runs)."
   echo "Selected bags: ${bag_names[*]} (edit bag_names and bag_start_times to configure runs)."
   echo "Defaults: <workspace>/data/holoocean, processing as fast as OpenVINS allows. Results: <workspace>/runs/<timestamp>/."
   echo "Set PLOTTER_PYTHON to select the plotting interpreter; see ReadMe.md for dependency setup."
