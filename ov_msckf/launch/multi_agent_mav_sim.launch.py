@@ -89,8 +89,6 @@ def generate_launch_description():
                     "simulation_executable": "run_multi_agent_simulation",
                     "namespace": "multi_agent",
                     "config": "magicc_fixedwing_sim",
-                    "max_cameras": "1",
-                    "use_stereo": "false",
                     "use_ground_plane_features": "true",
                     "ground_plane_features_range": "2.0",
                     "dosave_state": "false",

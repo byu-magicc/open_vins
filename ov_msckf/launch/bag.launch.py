@@ -37,12 +37,12 @@ def launch_setup(context):
         "bag_start": ParameterValue(LaunchConfiguration("bag_start"), value_type=float),
         "bag_duration": ParameterValue(LaunchConfiguration("bag_duration"), value_type=float),
         "config_path": config_path,
+        "num_opencv_threads": 0,
         "verbosity": LaunchConfiguration("verbosity"),
         "visualize": ParameterValue(LaunchConfiguration("rviz_enable"), value_type=bool),
     }
     for name, value_type in (
-        ("max_cameras", int), ("use_stereo", bool), ("topic_imu", str),
-        ("track_frequency", float), ("num_opencv_threads", int), ("multi_threading_pubs", bool),
+        ("topic_imu", str),
         ("save_total_state", bool), ("filepath_est", str), ("filepath_std", str), ("path_gt", str),
         ("publish_global_to_imu_tf", bool), ("publish_calibration_tf", bool),
     ):
@@ -56,6 +56,7 @@ def launch_setup(context):
                 any(type(value) not in (int, float) or not math.isfinite(value) for value in state)):
             raise RuntimeError("initial_state_imu must be a JSON array of 17 finite numbers")
         parameters["initial_state_imu"] = [float(value) for value in state]
+
     parameters.update(camera_parameters(context))
 
     def finish_bag(event, context):
@@ -110,11 +111,6 @@ def generate_launch_description():
         DeclareLaunchArgument("camera_topics", default_value="", description="Comma-separated camera topics in camera ID order"),
         DeclareLaunchArgument("topic_camera0", default_value="", description="Override camera 0 topic; camera_topics takes precedence"),
         DeclareLaunchArgument("topic_camera1", default_value="", description="Override camera 1 topic; camera_topics takes precedence"),
-        DeclareLaunchArgument("max_cameras", default_value=""),
-        DeclareLaunchArgument("use_stereo", default_value=""),
-        DeclareLaunchArgument("track_frequency", default_value="", description="Maximum camera tracking rate per stream (Hz)"),
-        DeclareLaunchArgument("num_opencv_threads", default_value="", description="Override OpenCV worker count from the config"),
-        DeclareLaunchArgument("multi_threading_pubs", default_value="", description="Publish tracking images in a background thread"),
         DeclareLaunchArgument("save_total_state", default_value="", description="Save legacy state and deviation files, including without RViz"),
         DeclareLaunchArgument("filepath_est", default_value=""),
         DeclareLaunchArgument("filepath_std", default_value=""),

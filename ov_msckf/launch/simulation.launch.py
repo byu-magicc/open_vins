@@ -50,34 +50,8 @@ launch_args = [
         default_value="5"
     ),
     DeclareLaunchArgument(
-        name="fej",
-        default_value="true"
-    ),
-    DeclareLaunchArgument(
-        name="feat_rep",
-        default_value="GLOBAL_3D"
-    ),
-    DeclareLaunchArgument(
-        name="num_clones",
-        default_value="11"
-    ),
-    DeclareLaunchArgument(
-        name="num_slam",
-        default_value="0"
-    ),
-    DeclareLaunchArgument(
         name="num_pts",
         default_value="100"
-    ),
-    DeclareLaunchArgument(
-        name="max_cameras",
-        default_value="2",
-        description="how many cameras we have 1 = mono, 2 = stereo, >2 = binocular (all mono tracking)",
-    ),
-    DeclareLaunchArgument(
-        name="use_stereo",
-        default_value="true",
-        description="if we have more than 1 camera, if we should try to track stereo constraints between pairs",
     ),
     DeclareLaunchArgument(
         name="feat_dist_min",
@@ -112,18 +86,6 @@ launch_args = [
     DeclareLaunchArgument(
         name="sim_do_perturbation",
         default_value="true"
-    ),
-    DeclareLaunchArgument(
-        name="sim_do_calibration",
-        default_value="false"
-    ),
-    DeclareLaunchArgument(
-        name="sim_do_calib_imu_intrinsics",
-        default_value="false"
-    ),
-    DeclareLaunchArgument(
-        name="sim_do_calib_g_sensitivity",
-        default_value="false"
     ),
 
     DeclareLaunchArgument(
@@ -253,21 +215,6 @@ def launch_setup(context):
             {"verbosity": LaunchConfiguration("verbosity")},
             {"config_path": config_path},
             {"num_opencv_threads": 0},
-
-            {"use_fej": LaunchConfiguration("fej")},
-            {"calib_cam_extrinsics": LaunchConfiguration("sim_do_calibration")},
-            {"calib_cam_intrinsics": LaunchConfiguration("sim_do_calibration")},
-            {"calib_cam_timeoffset": LaunchConfiguration("sim_do_calibration")},
-            {"calib_imu_intrinsics": LaunchConfiguration("sim_do_calib_imu_intrinsics")},
-            {"calib_imu_g_sensitivity": LaunchConfiguration("sim_do_calib_g_sensitivity")},
-            {"max_clones": LaunchConfiguration("num_clones")},
-            {"max_slam": LaunchConfiguration("num_slam")},
-            {"use_stereo": LaunchConfiguration("use_stereo")},
-            {"max_cameras": LaunchConfiguration("max_cameras")},
-            {"feat_rep_msckf": LaunchConfiguration("feat_rep")},
-            {"feat_rep_slam": LaunchConfiguration("feat_rep")},
-            {"feat_rep_aruco": LaunchConfiguration("feat_rep")},
-
             {"num_pts": LaunchConfiguration("num_pts")},
             {"visualize": LaunchConfiguration("rviz_enable")},
         ],

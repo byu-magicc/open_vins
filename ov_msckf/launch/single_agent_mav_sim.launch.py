@@ -11,8 +11,6 @@ def generate_launch_description():
                 'namespace': 'center',
                 'dataset': 'gazebo_sinusoid/center_trajectory.txt',
                 'config': 'magicc_fixedwing_sim',
-                'max_cameras': '1',
-                'use_stereo': 'false',
                 'use_ground_plane_features': 'true',
             }.items(),
         )

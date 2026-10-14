@@ -31,16 +31,6 @@ launch_args = [
         description="ALL, DEBUG, INFO, WARNING, ERROR, SILENT",
     ),
     DeclareLaunchArgument(
-        name="use_stereo",
-        default_value="true",
-        description="if we have more than 1 camera, if we should try to track stereo constraints between pairs",
-    ),
-    DeclareLaunchArgument(
-        name="max_cameras",
-        default_value="2",
-        description="how many cameras we have 1 = mono, 2 = stereo, >2 = binocular (all mono tracking)",
-    ),
-    DeclareLaunchArgument(
         name="save_total_state",
         default_value="false",
         description="record the total state with calibration and features to a txt file",
@@ -86,8 +76,6 @@ def launch_setup(context):
         output='screen',
         parameters=[
             {"verbosity": LaunchConfiguration("verbosity")},
-            {"use_stereo": LaunchConfiguration("use_stereo")},
-            {"max_cameras": LaunchConfiguration("max_cameras")},
             {"save_total_state": LaunchConfiguration("save_total_state")},
             {"save_results": ParameterValue(LaunchConfiguration("save_results"), value_type=bool)},
             {"results_path": ParameterValue(LaunchConfiguration("results_path"), value_type=str)},

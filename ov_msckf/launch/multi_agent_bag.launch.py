@@ -58,6 +58,7 @@ def launch_setup(context):
         "bag_starts": starts,
         "bag_duration": duration,
         "config_path": config_path,
+        "num_opencv_threads": 0,
         "topic_imu": imu_topic,
         "verbosity": LaunchConfiguration("verbosity"),
         "range_stddev": ParameterValue(LaunchConfiguration("range_stddev"), value_type=float),
@@ -67,11 +68,11 @@ def launch_setup(context):
         "visualize": ParameterValue(LaunchConfiguration("rviz_enable"), value_type=bool),
     }
     for name, value_type in (
-        ("max_cameras", int), ("use_stereo", bool), ("track_frequency", float),
         ("publish_global_to_imu_tf", bool), ("publish_calibration_tf", bool),
     ):
         if LaunchConfiguration(name).perform(context):
             parameters[name] = ParameterValue(LaunchConfiguration(name), value_type=value_type)
+
     parameters.update(camera_parameters(context))
 
     temporary_directory = tempfile.mkdtemp(prefix="openvins_multi_agent_bag_")
@@ -133,9 +134,6 @@ def generate_launch_description():
         DeclareLaunchArgument("camera_topics", default_value="", description="Comma-separated camera topics in camera ID order"),
         DeclareLaunchArgument("topic_camera0", default_value=""),
         DeclareLaunchArgument("topic_camera1", default_value=""),
-        DeclareLaunchArgument("max_cameras", default_value=""),
-        DeclareLaunchArgument("use_stereo", default_value=""),
-        DeclareLaunchArgument("track_frequency", default_value=""),
         DeclareLaunchArgument("publish_global_to_imu_tf", default_value=""),
         DeclareLaunchArgument("publish_calibration_tf", default_value=""),
         DeclareLaunchArgument("verbosity", default_value="INFO"),
