@@ -40,6 +40,7 @@ private:
   std::string directory;
   std::ofstream estimates;
   std::ofstream truth;
+  std::ofstream camera_intrinsics;
 };
 } // namespace ov_msckf
 

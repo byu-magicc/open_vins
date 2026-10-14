@@ -112,6 +112,10 @@ EstimatorResult VioManager::get_estimator_result() {
   } else {
     result.valid = true;
     result.state = state->_imu->value();
+    if (state->_options.do_calib_camera_intrinsics) {
+      for (int camera_id = 0; camera_id < state->_options.num_cameras; ++camera_id)
+        result.camera_intrinsics.push_back(state->_cam_intrinsics.at(camera_id)->value());
+    }
     result.covariance = StateHelper::get_marginal_covariance(
         state, {state->_imu->q(), state->_imu->p(), state->_imu->v(), state->_imu->bg(), state->_imu->ba()});
   }

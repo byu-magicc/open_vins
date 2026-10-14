@@ -101,6 +101,17 @@ FactorGraphState::FactorGraphState(const VioManagerOptions &options) : agent_id(
     throw std::invalid_argument("Factor graph fleet ID exceeds the shared-key namespace");
   gtsam::ISAM2Params optimizer_parameters;
   optimizer_parameters.relinearizeThreshold = options.relinearize_threshold;
+  if (options.state_options.do_calib_camera_intrinsics) {
+    gtsam::FastMap<char, gtsam::Vector> thresholds;
+    thresholds['x'] = gtsam::Vector::Constant(6, options.relinearize_threshold);
+    thresholds['v'] = gtsam::Vector::Constant(3, options.relinearize_threshold);
+    thresholds['b'] = gtsam::Vector::Constant(6, options.relinearize_threshold);
+    thresholds['s'] = gtsam::Vector::Constant(3, options.relinearize_threshold);
+    thresholds['k'] = gtsam::Vector::Constant(8, options.relinearize_threshold);
+    // Distortion uses much smaller units than focal lengths and principal points.
+    thresholds['k'].tail<4>() *= 0.005;
+    optimizer_parameters.relinearizeThreshold = thresholds;
+  }
   optimizer_parameters.relinearizeSkip = options.relinearize_skip;
   optimizer_parameters.cacheLinearizedFactors = true;
   optimizer_parameters.findUnusedFactorSlots = true;
@@ -136,11 +147,11 @@ FactorGraphState::FactorGraphState(const VioManagerOptions &options) : agent_id(
   for (int camera_id = 0; camera_id < options.state_options.num_cameras; ++camera_id) {
     const auto camera = options.camera_intrinsics.at(camera_id);
     const Eigen::VectorXd parameters = camera->get_value();
-    gtsam::Vector9 calibration;
-    calibration << parameters.head<2>(), 0.0, parameters.tail<6>();
+    if (options.state_options.do_calib_camera_intrinsics)
+      calibration_keys.push_back(gtsam::Symbol('k', camera_id));
     const bool fisheye = std::dynamic_pointer_cast<ov_core::CamEqui>(camera) != nullptr;
     camera_rig->emplace_back(camera_pose_from_openvins(options.camera_extrinsics.at(camera_id)),
-                             boost::make_shared<FixedCameraCalibration>(fisheye, calibration));
+                             boost::make_shared<CameraCalibration>(fisheye, parameters));
   }
 }
 
@@ -156,6 +167,11 @@ void FactorGraphState::feed_imu(const ov_core::ImuData &message) {
 
 void FactorGraphState::initialize(const FactorGraphInitialization &initialization) {
   std::lock_guard<std::mutex> lock(mutex);
+  const int dimension = 15 + 8 * calibration_keys.size();
+  if (initialization.covariance.rows() != initialization.covariance.cols() ||
+      (initialization.covariance.rows() != 15 && initialization.covariance.rows() != dimension) ||
+      (!initialization.camera_intrinsics.empty() && initialization.camera_intrinsics.size() != calibration_keys.size()))
+    throw std::invalid_argument("Factor graph initialization has invalid navigation/intrinsics dimensions");
   pending_factors.resize(0);
   pending_values.clear();
   frames.clear();
@@ -181,18 +197,33 @@ void FactorGraphState::initialize(const FactorGraphInitialization &initializatio
   raw_bias << initialization.imu_state.segment<3>(13), initialization.imu_state.segment<3>(10);
   initial_values.insert(initial_frame.bias_key, gtsam::imuBias::ConstantBias(raw_to_corrected * raw_bias));
 
-  Eigen::Matrix<double, 15, 15> tangent_transform = Eigen::Matrix<double, 15, 15>::Zero();
+  Eigen::MatrixXd covariance = Eigen::MatrixXd::Zero(dimension, dimension);
+  covariance.topLeftCorner<15, 15>() = initialization.covariance.topLeftCorner<15, 15>();
+  for (size_t camera_id = 0; camera_id < calibration_keys.size(); ++camera_id) {
+    const gtsam::Vector8 calibration = initialization.camera_intrinsics.empty()
+                                         ? camera_rig->at(camera_id).calibration().vector()
+                                         : initialization.camera_intrinsics.at(camera_id);
+    initial_values.insert(calibration_keys.at(camera_id), calibration);
+    covariance.block<4, 4>(15 + 8 * camera_id, 15 + 8 * camera_id).setIdentity();
+    covariance.block<4, 4>(19 + 8 * camera_id, 19 + 8 * camera_id) = std::pow(0.005, 2) * Eigen::Matrix4d::Identity();
+  }
+  if (initialization.covariance.rows() == dimension && initialization.covariance.cols() == dimension)
+    covariance = initialization.covariance;
+  Eigen::MatrixXd tangent_transform = Eigen::MatrixXd::Identity(dimension, dimension);
+  tangent_transform.topLeftCorner<15, 15>().setZero();
   tangent_transform.block<3, 3>(0, 0).setIdentity();
   tangent_transform.block<3, 3>(3, 3) = ov_core::quat_2_Rot(initialization.imu_state.head<4>());
   tangent_transform.block<3, 3>(6, 6).setIdentity();
   tangent_transform.block<6, 3>(9, 9) = raw_to_corrected.rightCols<3>();
   tangent_transform.block<6, 3>(9, 12) = raw_to_corrected.leftCols<3>();
   const Eigen::MatrixXd information =
-      covariance_square_root_information(tangent_transform * initialization.covariance * tangent_transform.transpose());
-  const std::vector<std::pair<gtsam::Key, gtsam::Matrix>> terms = {{initial_frame.pose_key, information.leftCols<6>()},
-                                                                   {initial_frame.velocity_key, information.middleCols<3>(6)},
-                                                                   {initial_frame.bias_key, information.rightCols<6>()}};
-  const gtsam::JacobianFactor joint_prior(terms, gtsam::Vector::Zero(15), gtsam::noiseModel::Unit::Create(15));
+      covariance_square_root_information(tangent_transform * covariance * tangent_transform.transpose());
+  std::vector<std::pair<gtsam::Key, gtsam::Matrix>> terms = {{initial_frame.pose_key, information.leftCols<6>()},
+                                                         {initial_frame.velocity_key, information.middleCols<3>(6)},
+                                                         {initial_frame.bias_key, information.middleCols<6>(9)}};
+  for (size_t camera_id = 0; camera_id < calibration_keys.size(); ++camera_id)
+    terms.emplace_back(calibration_keys.at(camera_id), information.middleCols<8>(15 + 8 * camera_id));
+  const gtsam::JacobianFactor joint_prior(terms, gtsam::Vector::Zero(dimension), gtsam::noiseModel::Unit::Create(dimension));
   pending_factors.emplace_shared<gtsam::LinearContainerFactor>(joint_prior, initial_values);
   pending_values.insert(initial_values);
   commit();
@@ -203,7 +234,12 @@ void FactorGraphState::initialize(const std::shared_ptr<State> &openvins_state) 
   FactorGraphInitialization initial;
   initial.timestamp = openvins_state->_timestamp;
   initial.imu_state = openvins_state->_imu->value();
-  initial.covariance = StateHelper::get_marginal_covariance(openvins_state, {openvins_state->_imu});
+  std::vector<std::shared_ptr<ov_type::Type>> variables{openvins_state->_imu};
+  for (size_t camera_id = 0; camera_id < calibration_keys.size(); ++camera_id) {
+    variables.push_back(openvins_state->_cam_intrinsics.at(camera_id));
+    initial.camera_intrinsics.push_back(openvins_state->_cam_intrinsics.at(camera_id)->value());
+  }
+  initial.covariance = StateHelper::get_marginal_covariance(openvins_state, variables);
   initialize(initial);
 }
 
@@ -213,6 +249,10 @@ bool FactorGraphState::reset_openvins(const std::shared_ptr<State> &openvins_sta
   for (const auto &clone : openvins_state->_clones_IMU) {
     requests.push_back({FactorGraphResetVariableType::CLONE, clone.first});
     variables.push_back(clone.second);
+  }
+  for (size_t camera_id = 0; camera_id < calibration_keys.size(); ++camera_id) {
+    requests.push_back({FactorGraphResetVariableType::CAMERA_INTRINSICS, 0.0, camera_id});
+    variables.push_back(openvins_state->_cam_intrinsics.at(camera_id));
   }
   const FactorGraphResetSnapshot snapshot = get_reset_snapshot(requests);
   if (!snapshot.valid) {
@@ -290,7 +330,7 @@ void FactorGraphState::add_visual_factors(const std::vector<std::shared_ptr<ov_c
     return;
   for (const auto &feature : features) {
     auto factor = boost::make_shared<FactorGraphVisualFactor>(camera_rig, sigma_msckf_pixels,
-                                                           optimizer->params().factorization == gtsam::ISAM2Params::QR);
+                                                              optimizer->params().factorization == gtsam::ISAM2Params::QR, calibration_keys);
     for (const auto &camera : feature->timestamps) {
       const auto &pixels = feature->uvs.at(camera.first);
       for (size_t index = 0; index < camera.second.size(); ++index) {
@@ -395,6 +435,8 @@ EstimatorResult FactorGraphState::get_estimate(double timestamp) {
     propagation_covariance = noise_mapping * gaussian_noise->covariance() * noise_mapping.transpose();
   }
 
+  for (auto key : calibration_keys)
+    estimate.camera_intrinsics.push_back(values.at<gtsam::Vector8>(key));
   estimate.valid = true;
   const Eigen::Matrix3d global_to_imu = pose.rotation().matrix().transpose();
   estimate.state.segment<4>(0) = ov_core::rot_2_quat(global_to_imu);
@@ -460,6 +502,9 @@ FactorGraphResetSnapshot FactorGraphState::get_reset_snapshot(const std::vector<
       case FactorGraphResetVariableType::CLONE:
         add_key(frame_at(variable.timestamp).pose_key, 6);
         break;
+      case FactorGraphResetVariableType::CAMERA_INTRINSICS:
+        add_key(calibration_keys.at(variable.camera_id), 8);
+        break;
       }
     }
 
@@ -470,8 +515,19 @@ FactorGraphResetSnapshot FactorGraphState::get_reset_snapshot(const std::vector<
       graph_dimension += dimensions.at(index);
     }
     int output_dimension = 0;
-    for (const auto &variable : variables)
-      output_dimension += variable.type == FactorGraphResetVariableType::IMU ? 15 : 6;
+    for (const auto &variable : variables) {
+      switch (variable.type) {
+      case FactorGraphResetVariableType::IMU:
+        output_dimension += 15;
+        break;
+      case FactorGraphResetVariableType::CLONE:
+        output_dimension += 6;
+        break;
+      case FactorGraphResetVariableType::CAMERA_INTRINSICS:
+        output_dimension += 8;
+        break;
+      }
+    }
     Eigen::MatrixXd mapping = Eigen::MatrixXd::Zero(output_dimension, graph_dimension);
     int row = 0;
     for (const auto &variable : variables) {
@@ -506,6 +562,13 @@ FactorGraphResetSnapshot FactorGraphState::get_reset_snapshot(const std::vector<
         mapping.block<3, 3>(row, key_columns.at(key)).setIdentity();
         mapping.block<3, 3>(row + 3, key_columns.at(key) + 3) = pose.rotation().matrix();
         row += 6;
+        break;
+      }
+      case FactorGraphResetVariableType::CAMERA_INTRINSICS: {
+        const auto key = calibration_keys.at(variable.camera_id);
+        output = values.at<gtsam::Vector8>(key);
+        mapping.block<8, 8>(row, key_columns.at(key)).setIdentity();
+        row += 8;
         break;
       }
       }

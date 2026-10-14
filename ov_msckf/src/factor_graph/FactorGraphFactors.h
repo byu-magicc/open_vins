@@ -18,23 +18,34 @@
 
 namespace ov_msckf {
 
-/** Fixed lens selection lets native rig factors support mixed radtan/fisheye cameras. */
-class FixedCameraCalibration {
+/** Eight OpenVINS intrinsics with fixed lens selection and zero skew. */
+class CameraCalibration {
 public:
-  enum { dimension = 9 };
-  FixedCameraCalibration(bool fisheye, const gtsam::Vector9 &parameters)
-      : fisheye_model(fisheye), radtan(parameters), equidistant(parameters) {}
-  gtsam::Point2 uncalibrate(const gtsam::Point2 &point, gtsam::OptionalJacobian<2, 9> calibration = boost::none,
-                            gtsam::OptionalJacobian<2, 2> pixel = boost::none) const {
-    return fisheye_model ? equidistant.uncalibrate(point, calibration, pixel) : radtan.uncalibrate(point, calibration, pixel);
+  enum { dimension = 8 };
+  CameraCalibration(bool fisheye, const gtsam::Vector8 &parameters) : fisheye_model(fisheye) {
+    gtsam::Vector9 native;
+    native << parameters.head<2>(), 0.0, parameters.tail<6>();
+    radtan = gtsam::Cal3DS2(native);
+    equidistant = gtsam::Cal3Fisheye(native);
   }
-  gtsam::Point2 calibrate(const gtsam::Point2 &point, gtsam::OptionalJacobian<2, 9> calibration = boost::none,
+  gtsam::Point2 uncalibrate(const gtsam::Point2 &point, gtsam::OptionalJacobian<2, 8> calibration = boost::none,
+                            gtsam::OptionalJacobian<2, 2> pixel = boost::none) const {
+    gtsam::Matrix29 native;
+    const auto result = fisheye_model ? equidistant.uncalibrate(point, calibration ? &native : nullptr, pixel)
+                                     : radtan.uncalibrate(point, calibration ? &native : nullptr, pixel);
+    if (calibration) {
+      calibration->leftCols<2>() = native.leftCols<2>();
+      calibration->rightCols<6>() = native.rightCols<6>();
+    }
+    return result;
+  }
+  gtsam::Point2 calibrate(const gtsam::Point2 &point, gtsam::OptionalJacobian<2, 8> calibration = boost::none,
                          gtsam::OptionalJacobian<2, 2> pixel = boost::none) const;
   double fx() const { return radtan.fx(); }
   gtsam::Matrix3 K() const { return radtan.K(); }
-  FixedCameraCalibration retract(const gtsam::Vector9 &delta) const { return {fisheye_model, vector() + delta}; }
-  gtsam::Vector9 localCoordinates(const FixedCameraCalibration &other) const { return other.vector() - vector(); }
-  bool equals(const FixedCameraCalibration &other, double tolerance) const {
+  CameraCalibration retract(const gtsam::Vector8 &delta) const { return {fisheye_model, vector() + delta}; }
+  gtsam::Vector8 localCoordinates(const CameraCalibration &other) const { return other.vector() - vector(); }
+  bool equals(const CameraCalibration &other, double tolerance) const {
     return fisheye_model == other.fisheye_model && radtan.equals(other.radtan, tolerance);
   }
   void print(const std::string &label) const {
@@ -44,8 +55,13 @@ public:
       radtan.print(label);
   }
 
+  gtsam::Vector8 vector() const {
+    gtsam::Vector8 parameters;
+    parameters << radtan.vector().head<2>(), radtan.vector().tail<6>();
+    return parameters;
+  }
+
 private:
-  gtsam::Vector9 vector() const { return radtan.vector(); }
   bool fisheye_model;
   gtsam::Cal3DS2 radtan;
   gtsam::Cal3Fisheye equidistant;
@@ -54,23 +70,27 @@ private:
 } // namespace ov_msckf
 
 namespace gtsam {
-template <> struct traits<ov_msckf::FixedCameraCalibration> : internal::Manifold<ov_msckf::FixedCameraCalibration> {};
+template <> struct traits<ov_msckf::CameraCalibration> : internal::Manifold<ov_msckf::CameraCalibration> {};
 } // namespace gtsam
 
 namespace ov_msckf {
 
-using GraphCamera = gtsam::PinholePose<FixedCameraCalibration>;
+using GraphCamera = gtsam::PinholePose<CameraCalibration>;
 using GraphCameraRig = gtsam::CameraSet<GraphCamera>;
 
-/** Native rig factor with Schur-complement Jacobian output when QR is enabled. */
+/** Structureless rig factor with optional shared camera intrinsics. */
 class FactorGraphVisualFactor : public gtsam::SmartProjectionRigFactor<GraphCamera> {
 public:
-  FactorGraphVisualFactor(const boost::shared_ptr<GraphCameraRig> &rig, double sigma_pixels, bool use_qr);
+  FactorGraphVisualFactor(const boost::shared_ptr<GraphCameraRig> &rig, double sigma_pixels, bool use_qr,
+                         const gtsam::KeyVector &calibration_keys);
+  void add(const gtsam::Point2 &measured, gtsam::Key pose_key, size_t camera_id);
+  GraphCameraRig cameras(const gtsam::Values &values) const override;
   boost::shared_ptr<gtsam::GaussianFactor> linearize(const gtsam::Values &values) const override;
   gtsam::NonlinearFactor::shared_ptr clone() const override;
 
 private:
   bool use_qr;
+  gtsam::KeyVector calibration_keys;
 };
 
 /** Tie an exchanged position to the translation of a local navigation pose. */

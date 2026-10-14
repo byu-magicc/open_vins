@@ -40,6 +40,7 @@ void write_state(std::ofstream &stream, const Eigen::Matrix<double, 16, 1> &stat
 EstimatorResults::EstimatorResults(const std::string &directory) : directory(directory) {
   boost::filesystem::create_directories(directory);
   boost::filesystem::remove(boost::filesystem::path(directory) / "groundtruth.csv");
+  boost::filesystem::remove(boost::filesystem::path(directory) / "camera_intrinsics.csv");
   estimates.open((boost::filesystem::path(directory) / "estimate.csv").string());
   if (!estimates)
     throw std::runtime_error("Unable to open estimator results in " + directory);
@@ -58,6 +59,21 @@ void EstimatorResults::record(const EstimatorResult &result) {
       estimates << ',' << result.covariance(row, column);
   estimates << '\n';
   estimates.flush();
+  if (result.valid && !result.camera_intrinsics.empty()) {
+    if (!camera_intrinsics.is_open()) {
+      camera_intrinsics.open((boost::filesystem::path(directory) / "camera_intrinsics.csv").string());
+      if (!camera_intrinsics)
+        throw std::runtime_error("Unable to open camera intrinsics results in " + directory);
+      camera_intrinsics << std::setprecision(17) << "timestamp,camera_id,fx,fy,cx,cy,d0,d1,d2,d3\n";
+    }
+    for (size_t camera_id = 0; camera_id < result.camera_intrinsics.size(); ++camera_id) {
+      camera_intrinsics << result.timestamp << ',' << camera_id;
+      for (int index = 0; index < 8; ++index)
+        camera_intrinsics << ',' << result.camera_intrinsics.at(camera_id)(index);
+      camera_intrinsics << '\n';
+    }
+    camera_intrinsics.flush();
+  }
 }
 
 void EstimatorResults::record_groundtruth(double timestamp, const Eigen::Matrix<double, 16, 1> &state) {

@@ -38,23 +38,27 @@ namespace ov_msckf {
 struct FactorGraphInitialization {
   double timestamp = -1;
   Eigen::Matrix<double, 16, 1> imu_state = Eigen::Matrix<double, 16, 1>::Zero();
-  Eigen::Matrix<double, 15, 15> covariance;
+  // Navigation followed by camera intrinsics, in camera ID order, when supplied.
+  Eigen::MatrixXd covariance;
+  std::vector<Eigen::Matrix<double, 8, 1>> camera_intrinsics;
 };
 
-/** Selected navigation posterior at one camera-clock timestamp. */
+/** Selected navigation posterior and optional online camera intrinsics at one camera-clock timestamp. */
 struct EstimatorResult {
   double timestamp = -1;
   bool valid = false;
   Eigen::Matrix<double, 16, 1> state = Eigen::Matrix<double, 16, 1>::Zero();
   Eigen::Matrix<double, 15, 15> covariance = Eigen::Matrix<double, 15, 15>::Zero();
+  std::vector<Eigen::Matrix<double, 8, 1>> camera_intrinsics;
 };
 
-enum class FactorGraphResetVariableType { IMU, CLONE };
+enum class FactorGraphResetVariableType { IMU, CLONE, CAMERA_INTRINSICS };
 
 /** A requested OpenVINS variable in active-state covariance order. */
 struct FactorGraphResetVariable {
   FactorGraphResetVariableType type;
   double timestamp;
+  size_t camera_id = 0;
 };
 
 /** Graph posterior converted into OpenVINS values and error coordinates. */

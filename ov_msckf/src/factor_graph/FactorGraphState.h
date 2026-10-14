@@ -96,6 +96,7 @@ private:
   std::map<double, Frame> frames;
   std::vector<ov_core::ImuData> imu_buffer;
   boost::shared_ptr<GraphCameraRig> camera_rig;
+  gtsam::KeyVector calibration_keys;
   boost::shared_ptr<gtsam::PreintegrationCombinedParams> preintegration_parameters;
   Eigen::Matrix3d accel_calibration;
   Eigen::Matrix3d gyro_calibration;

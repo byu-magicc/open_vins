@@ -306,6 +306,10 @@ bool StateHelper::reset(std::shared_ptr<State> state, const std::vector<std::sha
     }
     row += row_variable->size();
   }
+  if (state->_options.do_calib_camera_intrinsics) {
+    for (const auto &calibration : state->_cam_intrinsics)
+      state->_cam_intrinsics_cameras.at(calibration.first)->set_value(calibration.second->value());
+  }
   return true;
 }
 

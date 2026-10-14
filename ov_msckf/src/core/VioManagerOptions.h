@@ -103,15 +103,16 @@ struct VioManagerOptions {
   bool resets_openvins() const { return filter_type == FilterType::HYBRID; }
   bool reports_factor_graph() const { return filter_type == FilterType::FACTOR_GRAPH; }
 
-  /// Graph/hybrid states contain navigation and camera clones only.
+  /// Graph/hybrid states support navigation, camera clones, and camera intrinsics.
+  /// These are not supported solely because they haven't been implemented.
   void validate_graph_features() const {
     if (state_options.max_slam_features > 0)
       throw std::invalid_argument("factor_graph/hybrid do not support SLAM: set max_slam to 0");
     if (use_aruco)
       throw std::invalid_argument("factor_graph/hybrid do not support ArUco: set use_aruco to false");
-    if (state_options.do_calib_camera_pose || state_options.do_calib_camera_intrinsics || state_options.do_calib_camera_timeoffset ||
+    if (state_options.do_calib_camera_pose || state_options.do_calib_camera_timeoffset ||
         state_options.do_calib_imu_intrinsics || state_options.do_calib_imu_g_sensitivity)
-      throw std::invalid_argument("factor_graph/hybrid require all online calibration options to be false");
+      throw std::invalid_argument("factor_graph/hybrid support only camera intrinsics online calibration");
     if (try_zupt)
       throw std::invalid_argument("factor_graph/hybrid do not support ZUPT: set try_zupt to false");
   }
