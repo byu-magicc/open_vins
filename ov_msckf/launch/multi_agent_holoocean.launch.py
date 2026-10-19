@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import sys
@@ -42,7 +43,7 @@ def launch_setup(context):
                     "topic_imu": "/imu/data",
                     "camera_topics": "/fixedwing/camera/image_raw",
                     "add_initial_error": LaunchConfiguration("add_initial_error"),
-                    "initial_state_stddev": LaunchConfiguration("initial_state_stddev"),
+                    "initial_state_covariance": LaunchConfiguration("initial_state_covariance"),
                 }.items(),
             ),
         ]
@@ -52,13 +53,18 @@ def launch_setup(context):
 
 
 def generate_launch_description():
+    initial_state_stddev = [0.035, 0.035, 0.5, 0.5, 0.5, 0.5, 0.05, 0.05, 0.05, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
+    initial_state_covariance = [
+        [stddev ** 2 if i == j else 0.0 for j in range(15)]
+        for i, stddev in enumerate(initial_state_stddev)
+    ]
     return LaunchDescription([
         DeclareLaunchArgument("bag_paths", description="Comma-separated HoloOcean ROS 2 bag directories or files"),
         DeclareLaunchArgument("add_initial_error", default_value="true", choices=["true", "false"]),
         DeclareLaunchArgument(
-            "initial_state_stddev",
-            default_value="[0.017, 0.017, 0.017, 0.05, 0.05, 0.05, 0.01, 0.01, 0.01, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]",
-            description="HoloOcean IMU initialization standard deviations: JSON array [theta_xyz, p_xyz, v_xyz, bg_xyz, ba_xyz]",
+            "initial_state_covariance",
+            default_value=json.dumps(initial_state_covariance),
+            description="HoloOcean IMU initialization covariance: JSON 15x15 matrix ordered as [theta_xyz, p_xyz, v_xyz, bg_xyz, ba_xyz]",
         ),
         OpaqueFunction(function=launch_setup),
     ])

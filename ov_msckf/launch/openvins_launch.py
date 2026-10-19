@@ -12,11 +12,16 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def initialization_arguments(add_initial_error):
+    initial_state_stddev = [0.017, 0.017, 0.017, 0.05, 0.05, 0.05, 0.01, 0.01, 0.01, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
+    initial_state_covariance = [
+        [stddev ** 2 if i == j else 0.0 for j in range(15)]
+        for i, stddev in enumerate(initial_state_stddev)
+    ]
     return [
         DeclareLaunchArgument(
-            "initial_state_stddev",
-            default_value="[0.017, 0.017, 0.017, 0.05, 0.05, 0.05, 0.01, 0.01, 0.01, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]",
-            description="IMU initialization standard deviations: JSON array [theta_xyz (rad), p_xyz (m), v_xyz (m/s), "
+            "initial_state_covariance",
+            default_value=json.dumps(initial_state_covariance),
+            description="IMU initialization covariance: JSON 15x15 matrix ordered as [theta_xyz (rad), p_xyz (m), v_xyz (m/s), "
                         "bg_xyz (rad/s), ba_xyz (m/s^2)], shared by all agents",
         ),
         DeclareLaunchArgument(
@@ -27,12 +32,13 @@ def initialization_arguments(add_initial_error):
 
 
 def initialization_parameters(context):
-    values = json.loads(LaunchConfiguration("initial_state_stddev").perform(context))
+    values = json.loads(LaunchConfiguration("initial_state_covariance").perform(context))
     if (not isinstance(values, list) or len(values) != 15 or
-            any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in values)):
-        raise RuntimeError("initial_state_stddev must be a JSON array of 15 finite nonnegative numbers")
+            any(not isinstance(row, list) or len(row) != 15 for row in values) or
+            any(type(value) not in (int, float) or not math.isfinite(value) for row in values for value in row)):
+        raise RuntimeError("initial_state_covariance must be a JSON 15x15 matrix of finite numbers")
     return {
-        "initial_state_stddev": [float(value) for value in values],
+        "initial_state_covariance": [float(value) for row in values for value in row],
         "add_initial_error": ParameterValue(LaunchConfiguration("add_initial_error"), value_type=bool),
     }
 

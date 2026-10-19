@@ -44,15 +44,15 @@ using namespace ov_msckf;
 
 void VioManager::initialize_imu_uncertainty() {
 
-  if (params.initial_state_stddev.size() != 15 ||
-      !std::all_of(params.initial_state_stddev.begin(), params.initial_state_stddev.end(),
-                   [](double value) { return std::isfinite(value) && value >= 0.0; }))
-    throw std::invalid_argument("initial_state_stddev must contain 15 finite nonnegative values");
-
-  // Initial IMU error covariance, ordered as orientation, position, velocity, gyro bias, accel bias
-  const Eigen::Map<const Eigen::VectorXd> stddev(params.initial_state_stddev.data(), 15);
+  const auto &covariance = params.initial_state_covariance;
+  if (!covariance.allFinite() || !covariance.isApprox(covariance.transpose(), 1e-12))
+    throw std::invalid_argument("initial_state_covariance must be finite and symmetric");
+  const Eigen::MatrixXd Cov = 0.5 * (covariance + covariance.transpose());
+  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> decomposition(Cov);
+  const double tolerance = 1e-12 * std::max(1.0, Cov.cwiseAbs().maxCoeff());
+  if (decomposition.info() != Eigen::Success || decomposition.eigenvalues().minCoeff() < -tolerance)
+    throw std::invalid_argument("initial_state_covariance must be positive semidefinite");
   std::vector<std::shared_ptr<ov_type::Type>> order = {state->_imu};
-  const Eigen::MatrixXd Cov = stddev.array().square().matrix().asDiagonal();
   StateHelper::set_initial_covariance(state, Cov, order);
 
   if (params.add_initial_error) {
@@ -63,7 +63,8 @@ void VioManager::initialize_imu_uncertainty() {
     for (int i = 0; i < standard_normal.size(); ++i) {
       standard_normal(i) = normal(generator);
     }
-    const Eigen::VectorXd error = stddev.cwiseProduct(standard_normal);
+    const Eigen::VectorXd error =
+        decomposition.eigenvectors() * decomposition.eigenvalues().cwiseMax(0.0).cwiseSqrt().asDiagonal() * standard_normal;
     state->_imu->update(error);
   }
   state->_imu->set_fej(state->_imu->value());

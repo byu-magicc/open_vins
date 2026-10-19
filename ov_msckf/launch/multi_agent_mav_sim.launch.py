@@ -87,7 +87,7 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(os.path.join(os.path.dirname(__file__), "simulation.launch.py")),
                 launch_arguments={
-                    "initial_state_stddev": LaunchConfiguration("initial_state_stddev"),
+                    "initial_state_covariance": LaunchConfiguration("initial_state_covariance"),
                     "add_initial_error": LaunchConfiguration("add_initial_error"),
                     "simulation_executable": "run_multi_agent_simulation",
                     "namespace": "multi_agent",

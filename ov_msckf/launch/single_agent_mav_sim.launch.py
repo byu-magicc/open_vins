@@ -15,7 +15,7 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/simulation.launch.py']),
             launch_arguments={
-                'initial_state_stddev': LaunchConfiguration('initial_state_stddev'),
+                'initial_state_covariance': LaunchConfiguration('initial_state_covariance'),
                 'add_initial_error': LaunchConfiguration('add_initial_error'),
                 'namespace': 'center',
                 'dataset': 'gazebo_sinusoid/center_trajectory.txt',

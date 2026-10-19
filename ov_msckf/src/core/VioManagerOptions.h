@@ -76,9 +76,11 @@ struct VioManagerOptions {
   /// Our state initialization options (e.g. window size, num features, if we should get the calibration)
   ov_init::InertialInitializerOptions init_options;
 
-  /// IMU initialization standard deviations: orientation, position, velocity, gyro bias, accel bias (xyz each).
-  std::vector<double> initial_state_stddev = {0.017, 0.017, 0.017, 0.05, 0.05, 0.05, 0.01, 0.01, 0.01,
-                                              0.02, 0.02, 0.02, 0.02, 0.02, 0.02};
+  /// Initial IMU error covariance, ordered as orientation, position, velocity, gyro bias, accel bias (xyz each).
+  /// The default is specified as standard deviations, squared into a diagonal covariance.
+  Eigen::Matrix<double, 15, 15> initial_state_covariance =
+      (Eigen::Matrix<double, 15, 1>() << 0.017, 0.017, 0.017, 0.05, 0.05, 0.05, 0.01, 0.01, 0.01,
+       0.02, 0.02, 0.02, 0.02, 0.02, 0.02).finished().array().square().matrix().asDiagonal();
 
   /// Add a Gaussian error matching the configured initial IMU covariance.
   bool add_initial_error = false;
@@ -171,6 +173,15 @@ struct VioManagerOptions {
     state_options.print(parser);
     init_options.print_and_load(parser);
     if (parser != nullptr) {
+#if ROS_AVAILABLE == 2
+      // ROS parameters carry matrices as row-major arrays.
+      std::vector<double> covariance(225);
+      Eigen::Map<Eigen::Matrix<double, 15, 15, Eigen::RowMajor>>(covariance.data()) = initial_state_covariance;
+      parser->parse_config("initial_state_covariance", covariance, false);
+      if (covariance.size() != 225)
+        throw std::invalid_argument("initial_state_covariance must contain 225 row-major entries");
+      initial_state_covariance = Eigen::Map<const Eigen::Matrix<double, 15, 15, Eigen::RowMajor>>(covariance.data());
+#endif
       parser->parse_config("dt_slam_delay", dt_slam_delay);
       parser->parse_config("try_zupt", try_zupt);
       parser->parse_config("zupt_max_velocity", zupt_max_velocity);

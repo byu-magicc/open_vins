@@ -14,7 +14,7 @@ from openvins_launch import extract_truth, initialization_arguments
 def launch_setup(context):
     arguments = {
         "bag_path": LaunchConfiguration("bag_path"),
-        "initial_state_stddev": LaunchConfiguration("initial_state_stddev"),
+        "initial_state_covariance": LaunchConfiguration("initial_state_covariance"),
         "add_initial_error": LaunchConfiguration("add_initial_error"),
         "relinearize_skip": LaunchConfiguration("relinearize_skip"),
         "config": "holoocean_fixedwing",

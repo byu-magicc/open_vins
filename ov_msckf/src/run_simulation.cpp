@@ -90,7 +90,6 @@ int main(int argc, char **argv) {
   params.print_and_load(parser);
   params.print_and_load_simulation(parser);
 #if ROS_AVAILABLE == 2
-  node->get_parameter("initial_state_stddev", params.initial_state_stddev);
   node->get_parameter("add_initial_error", params.add_initial_error);
   params.set_results_namespace(node->get_namespace());
 #endif

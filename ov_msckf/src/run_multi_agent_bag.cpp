@@ -101,7 +101,6 @@ int main(int argc, char **argv) {
       ov_core::Printer::setPrintLevel(verbosity);
       VioManagerOptions params;
       params.print_and_load(parser);
-      node->get_parameter("initial_state_stddev", params.initial_state_stddev);
       node->get_parameter("add_initial_error", params.add_initial_error);
       params.set_results_namespace(names[index]);
       params.factor_graph_agent_id = index;
