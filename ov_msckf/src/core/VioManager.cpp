@@ -62,8 +62,11 @@ void VioManager::record_groundtruth(double timestamp, const Eigen::Matrix<double
 }
 
 void VioManager::finish_factor_graph_update() {
-  if (factor_graph != nullptr)
+  if (factor_graph != nullptr) {
+    if (params.resets_openvins())
+      factor_graph->update_from_openvins(state);
     factor_graph->finish_update();
+  }
   estimator_result_cache_valid = false;
   if (!params.defer_results)
     record_estimator_results();
@@ -72,6 +75,10 @@ void VioManager::finish_factor_graph_update() {
 void VioManager::communicate_range(VioManager &neighbor, double timestamp, double neighbor_timestamp, double range, double variance) {
   if (!factor_graph || !neighbor.factor_graph)
     throw std::runtime_error("Ranging requires a factor graph on both vehicles");
+  if (params.resets_openvins())
+    factor_graph->update_from_openvins(state);
+  if (neighbor.params.resets_openvins())
+    neighbor.factor_graph->update_from_openvins(neighbor.state);
   factor_graph->communicate(*neighbor.factor_graph, timestamp, neighbor_timestamp, range, variance);
   estimator_result_cache_valid = false;
   neighbor.estimator_result_cache_valid = false;
@@ -441,7 +448,10 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     propagator->propagate_and_clone(state, message.timestamp);
   }
   if (factor_graph != nullptr && state->_timestamp == message.timestamp) {
-    factor_graph->materialize_clone(message.timestamp);
+    if (params.resets_openvins())
+      factor_graph->update_from_openvins(state);
+    else
+      factor_graph->materialize_clone(message.timestamp);
   }
   rT3 = boost::posix_time::microsec_clock::local_time();
 
@@ -700,6 +710,8 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   }
 
   // Finally marginalize the oldest clone if needed
+  if (factor_graph != nullptr && params.resets_openvins())
+    factor_graph->update_from_openvins(state);
   StateHelper::marginalize_old_clone(state);
   rT7 = boost::posix_time::microsec_clock::local_time();
 

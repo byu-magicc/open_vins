@@ -209,9 +209,13 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       size_t clone_rate = (size_t)((double)camera_timestamps_to_init.size() / (double)params.state_options.max_clone_size) + 1;
       for (size_t i = 0; i < camera_timestamps_to_init.size(); i += clone_rate) {
         propagator->propagate_and_clone(state, camera_timestamps_to_init.at(i));
+        if (factor_graph && state->_timestamp == camera_timestamps_to_init.at(i)) {
+          if (params.resets_openvins())
+            factor_graph->update_from_openvins(state);
+          else
+            factor_graph->materialize_clone(camera_timestamps_to_init.at(i));
+        }
         StateHelper::marginalize_old_clone(state);
-        if (factor_graph && state->_timestamp == camera_timestamps_to_init.at(i))
-          factor_graph->materialize_clone(camera_timestamps_to_init.at(i));
         finish_factor_graph_update();
       }
       PRINT_DEBUG(YELLOW "[init]: moved the state forward %.2f seconds\n" RESET, state->_timestamp - timestamp);

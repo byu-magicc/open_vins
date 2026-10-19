@@ -14,6 +14,7 @@
 #include "FactorGraphFactors.h"
 #include "FactorGraphTypes.h"
 
+#include <gtsam/linear/GaussianFactorGraph.h>
 #include <gtsam/linear/JacobianFactor.h>
 #include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/nonlinear/ISAM2.h>
@@ -45,6 +46,8 @@ public:
   void initialize(const std::shared_ptr<State> &openvins_state);
   bool reset_openvins(const std::shared_ptr<State> &openvins_state, std::string &error);
   void materialize_clone(double timestamp);
+  /** Seed hybrid navigation, clone poses, and intrinsics from the paired filter. */
+  void update_from_openvins(const std::shared_ptr<State> &openvins_state);
   void add_visual_factors(const std::vector<std::shared_ptr<ov_core::Feature>> &features);
 
   /** Commit one camera transaction without extracting an estimate or covariance. */
@@ -79,7 +82,8 @@ private:
   };
 
   gtsam::Values current_values() const;
-  Frame &ensure_frame(double timestamp);
+  gtsam::GaussianFactorGraph::shared_ptr marginal_graph(const gtsam::KeyVector &keys) const;
+  Frame &ensure_frame(double timestamp, const State *openvins_state);
   void commit(bool full_update = false);
   gtsam::PreintegratedCombinedMeasurements preintegrate(double start, double end, const gtsam::imuBias::ConstantBias &bias) const;
 
@@ -91,6 +95,10 @@ private:
   gtsam::FactorIndices pending_remove_factor_indices;
 
   std::unique_ptr<gtsam::ISAM2> optimizer;
+  bool hybrid;
+  bool use_qr;
+  gtsam::NonlinearFactorGraph hybrid_graph;
+  gtsam::Values hybrid_values;
   gtsam::NonlinearFactorGraph pending_factors;
   gtsam::Values pending_values;
   std::map<double, Frame> frames;
