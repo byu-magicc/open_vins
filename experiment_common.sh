@@ -45,9 +45,25 @@ run_experiments() {
     local mode_plots="${plots_directory}/${filter_type}"
     export ROS_LOG_DIR="${run_directory}/ros_logs/${filter_type}"
     mkdir -p "${mode_results}" "${mode_plots}" "${ROS_LOG_DIR}"
+    local launch_status=0
+    # OpenVINS errors have no severity tag; request only errors and hide launcher chatter.
     ros2 launch ov_msckf "${launch_file}" "$@" \
-      filter_type:="${filter_type}" save_results:=true results_path:="${mode_results}" \
-      >"${ROS_LOG_DIR}/launch.log" 2>&1
+      filter_type:="${filter_type}" save_results:=true results_path:="${mode_results}" verbosity:=ERROR \
+      2>&1 | tee "${ROS_LOG_DIR}/launch.log" | awk '
+        {
+          line = $0
+          gsub(/\033\[[0-9;]*m/, "", line)
+          if (line ~ /\[(ERROR|FATAL)\]/) { print line; fflush(); next }
+          if (line ~ /\[(DEBUG|INFO|WARN|WARNING)\]/ || line ~ /Setting printing level to:/ ||
+              line ~ /overriding node verbosity with value from ROS!/ || line ~ /^[[:space:]]*$/) next
+          print line
+          fflush()
+        }
+      ' >&2 || launch_status=$?
+    if ((launch_status != 0)); then
+      echo "Error: ${filter_type} failed with exit code ${launch_status}; simulation log: ${ROS_LOG_DIR}/launch.log" >&2
+      return "${launch_status}"
+    fi
     "${plotter_python}" "${repository_directory}/plotters/plot_results.py" \
       "${mode_results}" "${mode_plots}" "${plot_arguments[@]}"
   done
