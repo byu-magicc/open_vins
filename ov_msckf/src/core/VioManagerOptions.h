@@ -76,6 +76,13 @@ struct VioManagerOptions {
   /// Our state initialization options (e.g. window size, num features, if we should get the calibration)
   ov_init::InertialInitializerOptions init_options;
 
+  /// IMU initialization standard deviations: orientation, position, velocity, gyro bias, accel bias (xyz each).
+  std::vector<double> initial_state_stddev = {0.017, 0.017, 0.017, 0.05, 0.05, 0.05, 0.01, 0.01, 0.01,
+                                              0.02, 0.02, 0.02, 0.02, 0.02, 0.02};
+
+  /// Add a Gaussian error matching the configured initial IMU covariance.
+  bool add_initial_error = false;
+
   /// Delay, in seconds, that we should wait from init before we start estimating SLAM features
   double dt_slam_delay = 2.0;
 

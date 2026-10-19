@@ -6,8 +6,13 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from openvins_launch import initialization_arguments, initialization_parameters
 
 launch_args = [
+    *initialization_arguments("false"),
     DeclareLaunchArgument(name="namespace", default_value="ov_msckf", description="namespace"),
     DeclareLaunchArgument(
         name="ov_enable", default_value="true", description="enable OpenVINS node"
@@ -75,6 +80,7 @@ def launch_setup(context):
         namespace=LaunchConfiguration("namespace"),
         output='screen',
         parameters=[
+            initialization_parameters(context),
             {"verbosity": LaunchConfiguration("verbosity")},
             {"save_total_state": LaunchConfiguration("save_total_state")},
             {"save_results": ParameterValue(LaunchConfiguration("save_results"), value_type=bool)},

@@ -9,10 +9,11 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from openvins_launch import graph_arguments, graph_parameters
+from openvins_launch import graph_arguments, graph_parameters, initialization_arguments, initialization_parameters
 
 launch_args = [
     *graph_arguments(10),
+    *initialization_arguments("true"),
     DeclareLaunchArgument(name="namespace", default_value="ov_msckf", description="namespace"),
     DeclareLaunchArgument(
         name="rviz_enable", default_value="false", description="enable rviz node"
@@ -176,6 +177,7 @@ def launch_setup(context):
         on_exit=Shutdown(),
         parameters=[
             graph_parameters(),
+            initialization_parameters(context),
             {"sim_traj_path":
                 os.path.join(
                     get_package_share_directory("ov_data"),

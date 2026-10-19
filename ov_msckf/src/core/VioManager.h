@@ -95,7 +95,7 @@ public:
                                    const std::vector<std::vector<std::pair<size_t, Eigen::VectorXf>>> &feats);
 
   /**
-   * @brief Given a state, this will initialize our IMU state.
+   * @brief Initialize the IMU from ground truth with the configured uncertainty and optional Gaussian error.
    * @param imustate State in the MSCKF ordering: [time(sec),q_GtoI,p_IinG,v_IinG,b_gyro,b_accel]
    */
   void initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate);
@@ -178,6 +178,9 @@ protected:
    * @return True if we have successfully initialized
    */
   bool try_to_initialize(const ov_core::CameraData &message);
+
+  /// Set the configured IMU covariance and optionally perturb the initialized state.
+  void initialize_imu_uncertainty();
 
   /** Commit a pending graph update and record the selected estimator result. */
   void finish_factor_graph_update();

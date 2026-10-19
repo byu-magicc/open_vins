@@ -57,6 +57,8 @@ int main(int argc, char **argv) {
 
     VioManagerOptions params;
     params.print_and_load(parser);
+    node->get_parameter("initial_state_stddev", params.initial_state_stddev);
+    node->get_parameter("add_initial_error", params.add_initial_error);
     std::vector<double> initial_state_imu;
     const bool truth_initialized = node->get_parameter("initial_state_imu", initial_state_imu);
     if (truth_initialized) {

@@ -6,7 +6,8 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(__file__))
-from openvins_launch import graph_arguments, graph_parameters, camera_parameters, extract_truth, rviz_configuration
+from openvins_launch import graph_arguments, graph_parameters, camera_parameters, rviz_configuration
+from openvins_launch import initialization_arguments, initialization_parameters
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -28,6 +29,9 @@ def launch_setup(context):
     for bag in bags:
         if not bag or not os.path.exists(bag):
             raise RuntimeError(f"Bag path does not exist: {bag}")
+    truth_paths = [path.strip() for path in LaunchConfiguration("truth_paths").perform(context).split(",")]
+    if len(truth_paths) != len(names) or any(not os.path.isdir(path) for path in truth_paths):
+        raise RuntimeError("truth_paths must contain one existing truth directory per bag")
     starts_argument = LaunchConfiguration("bag_starts").perform(context)
     starts = [float(value) for value in starts_argument.split(",")] if starts_argument else [0.0] * len(names)
     if len(starts) != len(names) or any(not math.isfinite(value) or value < 0 for value in starts):
@@ -54,7 +58,9 @@ def launch_setup(context):
     parameters = {
         **graph_parameters(),
         "agent_names": names,
+        **initialization_parameters(context),
         "bag_paths": bags,
+        "truth_paths": truth_paths,
         "bag_starts": starts,
         "bag_duration": duration,
         "config_path": config_path,
@@ -77,13 +83,6 @@ def launch_setup(context):
 
     temporary_directory = tempfile.mkdtemp(prefix="openvins_multi_agent_bag_")
     try:
-        truth_paths = []
-        for name, bag in zip(names, bags):
-            truth_path = os.path.join(temporary_directory, name)
-            extract_truth(bag, ["--export-dir", truth_path, "--topic-imu", imu_topic])
-            truth_paths.append(truth_path)
-        parameters["truth_paths"] = truth_paths
-
         rviz_config_path = LaunchConfiguration("rviz_config_path").perform(context)
         if IfCondition(LaunchConfiguration("rviz_enable")).evaluate(context) and not rviz_config_path:
             namespace = LaunchConfiguration("namespace").perform(context)
@@ -123,12 +122,16 @@ def launch_setup(context):
 def generate_launch_description():
     return LaunchDescription([
         *graph_arguments(1),
-        DeclareLaunchArgument("bag_paths", description="Comma-separated HoloOcean ROS 2 bag directories or files"),
+        *initialization_arguments("false"),
+        DeclareLaunchArgument("bag_paths", description="Comma-separated ROS 2 bag directories or files"),
+        DeclareLaunchArgument(
+            "truth_paths", description="Comma-separated directories containing truth.csv and clock.csv, one per bag",
+        ),
         DeclareLaunchArgument("agent_names", default_value="center,left,right"),
         DeclareLaunchArgument("bag_starts", default_value="", description="One start offset per bag, relative to its first IMU header; empty uses zeros"),
         DeclareLaunchArgument("bag_duration", default_value="-1.0", description="Replay duration per bag; -1 processes the remaining bags"),
         DeclareLaunchArgument("namespace", default_value="multi_agent"),
-        DeclareLaunchArgument("config", default_value="holoocean_fixedwing"),
+        DeclareLaunchArgument("config", default_value="euroc_mav"),
         DeclareLaunchArgument("config_path", default_value=""),
         DeclareLaunchArgument("topic_imu", default_value=""),
         DeclareLaunchArgument("camera_topics", default_value="", description="Comma-separated camera topics in camera ID order"),

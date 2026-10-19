@@ -18,7 +18,7 @@ from launch.substitutions import LaunchConfiguration
 
 
 sys.path.insert(0, os.path.dirname(__file__))
-from openvins_launch import rviz_configuration
+from openvins_launch import initialization_arguments, rviz_configuration
 
 def launch_setup(context):
     namespace = "multi_agent"
@@ -70,6 +70,7 @@ def launch_setup(context):
 def generate_launch_description():
     return LaunchDescription(
         [
+            *initialization_arguments("true"),
             # These are needed by launch_setup before the included declarations run.
             DeclareLaunchArgument("agent_names", default_value="center,left,right"),
             DeclareLaunchArgument("rviz_enable", default_value="false"),
@@ -86,6 +87,8 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(os.path.join(os.path.dirname(__file__), "simulation.launch.py")),
                 launch_arguments={
+                    "initial_state_stddev": LaunchConfiguration("initial_state_stddev"),
+                    "add_initial_error": LaunchConfiguration("add_initial_error"),
                     "simulation_executable": "run_multi_agent_simulation",
                     "namespace": "multi_agent",
                     "config": "magicc_fixedwing_sim",

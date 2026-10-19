@@ -9,11 +9,13 @@ from launch.substitutions import LaunchConfiguration
 
 
 sys.path.insert(0, os.path.dirname(__file__))
-from openvins_launch import extract_truth
+from openvins_launch import extract_truth, initialization_arguments
 
 def launch_setup(context):
     arguments = {
         "bag_path": LaunchConfiguration("bag_path"),
+        "initial_state_stddev": LaunchConfiguration("initial_state_stddev"),
+        "add_initial_error": LaunchConfiguration("add_initial_error"),
         "relinearize_skip": LaunchConfiguration("relinearize_skip"),
         "config": "holoocean_fixedwing",
         "topic_imu": "/imu/data",
@@ -34,6 +36,7 @@ def launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        *initialization_arguments("true"),
         DeclareLaunchArgument("bag_path", description="ROS 2 HoloOcean bag directory or file"),
         DeclareLaunchArgument(
             "start_time", default_value="",

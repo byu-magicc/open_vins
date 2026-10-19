@@ -57,5 +57,5 @@ agent_names_argument=$(IFS=,; echo "${bag_names[*]}")
 bag_paths_argument=$(IFS=,; echo "${bag_paths[*]}")
 bag_starts_argument=$(IFS=,; echo "${bag_starts[*]}")
 
-run_experiments multi_agent_bag.launch.py true "${launch_arguments[@]}" \
+run_experiments multi_agent_holoocean.launch.py true "${launch_arguments[@]}" \
   agent_names:="${agent_names_argument}" bag_paths:="${bag_paths_argument}" bag_starts:="${bag_starts_argument}"

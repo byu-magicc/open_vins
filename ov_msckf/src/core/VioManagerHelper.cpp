@@ -34,24 +34,45 @@
 #include "state/State.h"
 #include "state/StateHelper.h"
 
+#include <algorithm>
+#include <random>
+#include <stdexcept>
+
 using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
+void VioManager::initialize_imu_uncertainty() {
+
+  if (params.initial_state_stddev.size() != 15 ||
+      !std::all_of(params.initial_state_stddev.begin(), params.initial_state_stddev.end(),
+                   [](double value) { return std::isfinite(value) && value >= 0.0; }))
+    throw std::invalid_argument("initial_state_stddev must contain 15 finite nonnegative values");
+
+  // Initial IMU error covariance, ordered as orientation, position, velocity, gyro bias, accel bias
+  const Eigen::Map<const Eigen::VectorXd> stddev(params.initial_state_stddev.data(), 15);
+  std::vector<std::shared_ptr<ov_type::Type>> order = {state->_imu};
+  const Eigen::MatrixXd Cov = stddev.array().square().matrix().asDiagonal();
+  StateHelper::set_initial_covariance(state, Cov, order);
+
+  if (params.add_initial_error) {
+    // Initialize state with N(0, Cov) error added
+    std::mt19937 generator(std::random_device{}());
+    std::normal_distribution<double> normal(0.0, 1.0);
+    Eigen::VectorXd standard_normal(state->_imu->size());
+    for (int i = 0; i < standard_normal.size(); ++i) {
+      standard_normal(i) = normal(generator);
+    }
+    const Eigen::VectorXd error = stddev.cwiseProduct(standard_normal);
+    state->_imu->update(error);
+  }
+  state->_imu->set_fej(state->_imu->value());
+}
+
 void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
 
-  // Initialize the system
   state->_imu->set_value(imustate.block(1, 0, 16, 1));
-  state->_imu->set_fej(imustate.block(1, 0, 16, 1));
-
-  // Fix the global yaw and position gauge freedoms
-  // TODO: Why does this break out simulation consistency metrics?
-  std::vector<std::shared_ptr<ov_type::Type>> order = {state->_imu};
-  Eigen::MatrixXd Cov = std::pow(0.02, 2) * Eigen::MatrixXd::Identity(state->_imu->size(), state->_imu->size());
-  Cov.block(0, 0, 3, 3) = std::pow(0.017, 2) * Eigen::Matrix3d::Identity(); // q
-  Cov.block(3, 3, 3, 3) = std::pow(0.05, 2) * Eigen::Matrix3d::Identity();  // p
-  Cov.block(6, 6, 3, 3) = std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v (static)
-  StateHelper::set_initial_covariance(state, Cov, order);
+  initialize_imu_uncertainty();
 
   // Set the state time
   state->_timestamp = imustate(0, 0);
@@ -120,8 +141,12 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
     // TODO: set the clones and SLAM features here so we can start updating right away...
     if (success) {
 
-      // Set our covariance (state should already be set in the initializer)
+#if ROS_AVAILABLE == 1
       StateHelper::set_initial_covariance(state, covariance, order);
+#else
+      // The initializer has set the state; use the configured uncertainty and optional error.
+      initialize_imu_uncertainty();
+#endif
 
       // Set the state time
       state->_timestamp = timestamp;

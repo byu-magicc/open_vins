@@ -113,6 +113,8 @@ int main(int argc, char **argv) {
       ov_core::Printer::setPrintLevel(verbosity);
       VioManagerOptions params;
       params.print_and_load(parser);
+      node->get_parameter("initial_state_stddev", params.initial_state_stddev);
+      node->get_parameter("add_initial_error", params.add_initial_error);
       params.print_and_load_simulation(parser);
       if (!parser->successful())
         throw std::runtime_error("Unable to parse simulation parameters");

@@ -1,4 +1,6 @@
 """Shared estimator parameters, truth extraction, and RViz generation for ROS 2 launches."""
+import json
+import math
 import os
 import subprocess
 import sys
@@ -7,6 +9,32 @@ from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.parameter_descriptions import ParameterValue
+
+
+def initialization_arguments(add_initial_error):
+    return [
+        DeclareLaunchArgument(
+            "initial_state_stddev",
+            default_value="[0.017, 0.017, 0.017, 0.05, 0.05, 0.05, 0.01, 0.01, 0.01, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]",
+            description="IMU initialization standard deviations: JSON array [theta_xyz (rad), p_xyz (m), v_xyz (m/s), "
+                        "bg_xyz (rad/s), ba_xyz (m/s^2)], shared by all agents",
+        ),
+        DeclareLaunchArgument(
+            "add_initial_error", default_value=add_initial_error, choices=["true", "false"],
+            description="Add a zero-mean Gaussian error matching the configured initial IMU covariance",
+        ),
+    ]
+
+
+def initialization_parameters(context):
+    values = json.loads(LaunchConfiguration("initial_state_stddev").perform(context))
+    if (not isinstance(values, list) or len(values) != 15 or
+            any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in values)):
+        raise RuntimeError("initial_state_stddev must be a JSON array of 15 finite nonnegative numbers")
+    return {
+        "initial_state_stddev": [float(value) for value in values],
+        "add_initial_error": ParameterValue(LaunchConfiguration("add_initial_error"), value_type=bool),
+    }
 
 
 def graph_arguments(relinearize_skip):
