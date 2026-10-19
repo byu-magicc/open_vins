@@ -15,6 +15,7 @@ def launch_setup(context):
     arguments = {
         "bag_path": LaunchConfiguration("bag_path"),
         "initial_state_covariance": LaunchConfiguration("initial_state_covariance"),
+        "initial_velocity_uncertainty_in_local_frame": LaunchConfiguration("initial_velocity_uncertainty_in_local_frame"),
         "add_initial_error": LaunchConfiguration("add_initial_error"),
         "relinearize_skip": LaunchConfiguration("relinearize_skip"),
         "config": "holoocean_fixedwing",

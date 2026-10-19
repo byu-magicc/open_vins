@@ -22,7 +22,12 @@ def initialization_arguments(add_initial_error):
             "initial_state_covariance",
             default_value=json.dumps(initial_state_covariance),
             description="IMU initialization covariance: JSON 15x15 matrix ordered as [theta_xyz (rad), p_xyz (m), v_xyz (m/s), "
-                        "bg_xyz (rad/s), ba_xyz (m/s^2)], shared by all agents",
+                        "bg_xyz (rad/s), ba_xyz (m/s^2)], shared by all agents. The velocity uncertainty frame is selected by "
+                        "initial_velocity_uncertainty_in_local_frame; velocity state values are always global",
+        ),
+        DeclareLaunchArgument(
+            "initial_velocity_uncertainty_in_local_frame", default_value="false", choices=["true", "false"],
+            description="Interpret the velocity uncertainty in the local IMU frame and propagate it into global coordinates",
         ),
         DeclareLaunchArgument(
             "add_initial_error", default_value=add_initial_error, choices=["true", "false"],
@@ -39,6 +44,8 @@ def initialization_parameters(context):
         raise RuntimeError("initial_state_covariance must be a JSON 15x15 matrix of finite numbers")
     return {
         "initial_state_covariance": [float(value) for row in values for value in row],
+        "initial_velocity_uncertainty_in_local_frame": ParameterValue(
+            LaunchConfiguration("initial_velocity_uncertainty_in_local_frame"), value_type=bool),
         "add_initial_error": ParameterValue(LaunchConfiguration("add_initial_error"), value_type=bool),
     }
 

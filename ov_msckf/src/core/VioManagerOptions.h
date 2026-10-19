@@ -82,6 +82,9 @@ struct VioManagerOptions {
       (Eigen::Matrix<double, 15, 1>() << 0.017, 0.017, 0.017, 0.05, 0.05, 0.05, 0.01, 0.01, 0.01,
        0.02, 0.02, 0.02, 0.02, 0.02, 0.02).finished().array().square().matrix().asDiagonal();
 
+  /// Express the input velocity uncertainty in the local IMU frame; velocity state values remain global.
+  bool initial_velocity_uncertainty_in_local_frame = false;
+
   /// Add a Gaussian error matching the configured initial IMU covariance.
   bool add_initial_error = false;
 
@@ -174,6 +177,7 @@ struct VioManagerOptions {
     init_options.print_and_load(parser);
     if (parser != nullptr) {
 #if ROS_AVAILABLE == 2
+      parser->parse_config("initial_velocity_uncertainty_in_local_frame", initial_velocity_uncertainty_in_local_frame, false);
       // ROS parameters carry matrices as row-major arrays.
       std::vector<double> covariance(225);
       Eigen::Map<Eigen::Matrix<double, 15, 15, Eigen::RowMajor>>(covariance.data()) = initial_state_covariance;
@@ -206,6 +210,7 @@ struct VioManagerOptions {
       parser->parse_config("record_timing_information", record_timing_information);
       parser->parse_config("record_timing_filepath", record_timing_filepath);
     }
+    PRINT_DEBUG("  - initial velocity uncertainty in local frame: %d\n", initial_velocity_uncertainty_in_local_frame);
     PRINT_DEBUG("  - dt_slam_delay: %.1f\n", dt_slam_delay);
     PRINT_DEBUG("  - zero_velocity_update: %d\n", try_zupt);
     PRINT_DEBUG("  - zupt_max_velocity: %.2f\n", zupt_max_velocity);

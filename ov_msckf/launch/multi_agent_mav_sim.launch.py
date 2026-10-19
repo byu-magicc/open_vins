@@ -88,6 +88,7 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(os.path.join(os.path.dirname(__file__), "simulation.launch.py")),
                 launch_arguments={
                     "initial_state_covariance": LaunchConfiguration("initial_state_covariance"),
+                    "initial_velocity_uncertainty_in_local_frame": LaunchConfiguration("initial_velocity_uncertainty_in_local_frame"),
                     "add_initial_error": LaunchConfiguration("add_initial_error"),
                     "simulation_executable": "run_multi_agent_simulation",
                     "namespace": "multi_agent",

@@ -47,7 +47,16 @@ void VioManager::initialize_imu_uncertainty() {
   const auto &covariance = params.initial_state_covariance;
   if (!covariance.allFinite() || !covariance.isApprox(covariance.transpose(), 1e-12))
     throw std::invalid_argument("initial_state_covariance must be finite and symmetric");
-  const Eigen::MatrixXd Cov = 0.5 * (covariance + covariance.transpose());
+  Eigen::MatrixXd Cov = 0.5 * (covariance + covariance.transpose());
+  if (params.initial_velocity_uncertainty_in_local_frame) {
+    const Eigen::Matrix3d imu_to_global = state->_imu->Rot().transpose();
+    const Eigen::Vector3d local_velocity = state->_imu->Rot() * state->_imu->vel();
+    Eigen::Matrix<double, 15, 15> jacobian = Eigen::Matrix<double, 15, 15>::Identity();
+    // JPL orientation errors: dv_G = -R_ItoG [v_I]x dtheta + R_ItoG dv_I. The nominal velocity stays global.
+    jacobian.block<3, 3>(6, 0) = -imu_to_global * ov_core::skew_x(local_velocity);
+    jacobian.block<3, 3>(6, 6) = imu_to_global;
+    Cov = (jacobian * Cov * jacobian.transpose()).eval();
+  }
   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> decomposition(Cov);
   const double tolerance = 1e-12 * std::max(1.0, Cov.cwiseAbs().maxCoeff());
   if (decomposition.info() != Eigen::Success || decomposition.eigenvalues().minCoeff() < -tolerance)

@@ -44,6 +44,7 @@ def launch_setup(context):
                     "camera_topics": "/fixedwing/camera/image_raw",
                     "add_initial_error": LaunchConfiguration("add_initial_error"),
                     "initial_state_covariance": LaunchConfiguration("initial_state_covariance"),
+                    "initial_velocity_uncertainty_in_local_frame": LaunchConfiguration("initial_velocity_uncertainty_in_local_frame"),
                 }.items(),
             ),
         ]
@@ -53,18 +54,23 @@ def launch_setup(context):
 
 
 def generate_launch_description():
-    initial_state_stddev = [0.035, 0.035, 0.5, 0.5, 0.5, 0.5, 0.05, 0.05, 0.05, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
+    initial_state_stddev = [0.035, 0.035, 0.17, 0.5, 0.5, 0.5, 0.05, 0.05, 0.05, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
     initial_state_covariance = [
         [stddev ** 2 if i == j else 0.0 for j in range(15)]
         for i, stddev in enumerate(initial_state_stddev)
     ]
     return LaunchDescription([
         DeclareLaunchArgument("bag_paths", description="Comma-separated HoloOcean ROS 2 bag directories or files"),
+        DeclareLaunchArgument(
+            "initial_velocity_uncertainty_in_local_frame", default_value="true", choices=["true", "false"],
+            description="Interpret velocity uncertainty in the local IMU frame; velocity state values remain global",
+        ),
         DeclareLaunchArgument("add_initial_error", default_value="true", choices=["true", "false"]),
         DeclareLaunchArgument(
             "initial_state_covariance",
             default_value=json.dumps(initial_state_covariance),
-            description="HoloOcean IMU initialization covariance: JSON 15x15 matrix ordered as [theta_xyz, p_xyz, v_xyz, bg_xyz, ba_xyz]",
+            description="HoloOcean IMU initialization covariance: JSON 15x15 matrix ordered as "
+                        "[theta_xyz, p_xyz, v_xyz, bg_xyz, ba_xyz]",
         ),
         OpaqueFunction(function=launch_setup),
     ])
