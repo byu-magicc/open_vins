@@ -121,7 +121,7 @@ def launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        *graph_arguments(1),
+        *graph_arguments(10),
         *initialization_arguments("false"),
         DeclareLaunchArgument("bag_paths", description="Comma-separated ROS 2 bag directories or files"),
         DeclareLaunchArgument(
