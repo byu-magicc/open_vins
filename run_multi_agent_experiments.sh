@@ -11,6 +11,7 @@ usage() {
   echo "Usage: $(basename -- "$0") [launch_argument:=value ...]"
   echo
   echo "Build the workspace, run the multi-agent simulation, and generate plots."
+  echo "Ctrl+C stops the simulation, skips remaining filters, and plots saved data."
   echo "Selected filters: ${filter_types[*]} (edit filter_types to configure runs)."
   echo "Results are saved under <workspace>/runs/<timestamp>/."
   echo

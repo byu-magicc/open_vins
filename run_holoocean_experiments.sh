@@ -12,6 +12,7 @@ declare -A bag_start_times=([center_2]=9.0 [left_2]=12.0 [right_2]=11.0)
 usage() {
   echo "Usage: $(basename -- "$0") [--bags-directory PATH] [launch_argument:=value ...]"
   echo "Build once, replay the selected bags together for each selected filter, and generate plots."
+  echo "Ctrl+C stops replay, skips remaining filters, and plots saved data."
   echo "Selected filters: ${filter_types[*]} (edit filter_types to configure runs)."
   echo "Selected bags: ${bag_names[*]} (edit bag_names and bag_start_times to configure runs)."
   echo "Defaults: <workspace>/data/holoocean, processing as fast as OpenVINS allows. Results: <workspace>/runs/<timestamp>/."
