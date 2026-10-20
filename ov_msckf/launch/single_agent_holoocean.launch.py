@@ -18,6 +18,7 @@ def launch_setup(context):
         "initial_velocity_uncertainty_in_local_frame": LaunchConfiguration("initial_velocity_uncertainty_in_local_frame"),
         "add_initial_error": LaunchConfiguration("add_initial_error"),
         "relinearize_skip": LaunchConfiguration("relinearize_skip"),
+        "use_qr": LaunchConfiguration("use_qr"),
         "config": "holoocean_fixedwing",
         "topic_imu": "/imu/data",
         "camera_topics": "/fixedwing/camera/image_raw",
@@ -39,6 +40,7 @@ def generate_launch_description():
     return LaunchDescription([
         *initialization_arguments("true"),
         DeclareLaunchArgument("bag_path", description="ROS 2 HoloOcean bag directory or file"),
+        DeclareLaunchArgument("use_qr", default_value="true", choices=["true", "false"]),
         DeclareLaunchArgument(
             "start_time", default_value="",
             description="Optional truth start in seconds from the first IMU header; empty uses normal initialization",

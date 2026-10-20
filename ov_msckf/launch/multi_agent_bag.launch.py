@@ -141,7 +141,7 @@ def generate_launch_description():
         DeclareLaunchArgument("publish_calibration_tf", default_value=""),
         DeclareLaunchArgument("verbosity", default_value="INFO"),
         DeclareLaunchArgument("range_stddev", default_value="1.0", description="Range noise standard deviation in meters"),
-        DeclareLaunchArgument("range_interval", default_value="45.0", description="Nominal range interval per pair in seconds"),
+        DeclareLaunchArgument("range_interval", default_value="90.0", description="Nominal range interval per pair in seconds"),
         DeclareLaunchArgument("range_jitter_fraction", default_value="0.5"),
         DeclareLaunchArgument("seed", default_value="5"),
         DeclareLaunchArgument("rviz_enable", default_value="false"),

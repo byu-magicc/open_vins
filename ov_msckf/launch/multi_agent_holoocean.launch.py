@@ -39,6 +39,7 @@ def launch_setup(context):
                 launch_arguments={
                     "bag_paths": LaunchConfiguration("bag_paths"),
                     "relinearize_skip": LaunchConfiguration("relinearize_skip"),
+                    "use_qr": LaunchConfiguration("use_qr"),
                     "truth_paths": ",".join(truth_paths),
                     "config": "holoocean_fixedwing",
                     "topic_imu": "/imu/data",
@@ -62,6 +63,7 @@ def generate_launch_description():
     ]
     return LaunchDescription([
         DeclareLaunchArgument("bag_paths", description="Comma-separated HoloOcean ROS 2 bag directories or files"),
+        DeclareLaunchArgument("use_qr", default_value="true", choices=["true", "false"]),
         DeclareLaunchArgument("relinearize_skip", default_value="1", description="Number of iSAM2 updates between relinearization checks"),
         DeclareLaunchArgument(
             "initial_velocity_uncertainty_in_local_frame", default_value="true", choices=["true", "false"],
