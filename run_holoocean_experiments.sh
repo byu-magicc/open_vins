@@ -16,7 +16,7 @@ usage() {
   echo "Selected filters: ${filter_types[*]} (edit filter_types to configure runs)."
   echo "Selected bags: ${bag_names[*]} (edit bag_names and bag_start_times to configure runs)."
   echo "Defaults: <workspace>/data/holoocean, processing as fast as OpenVINS allows. Results: <workspace>/runs/<timestamp>/."
-  echo "Set PLOTTER_PYTHON to select the plotting interpreter; see ReadMe.md for dependency setup."
+  echo "Uses python3 from the active environment."
 }
 
 launch_arguments=()

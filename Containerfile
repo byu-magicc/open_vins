@@ -13,8 +13,14 @@ RUN apt-get update && apt-get upgrade -y && \
   libeigen3-dev libboost-all-dev \
   # open_vins dependencies
   libgflags-dev libatlas-base-dev libsuitesparse-dev libceres-dev \
-  python3-matplotlib python3-numpy python3-scipy python3-yaml && \
+  python3-matplotlib python3-numpy python3-scipy python3-yaml python3-venv && \
   rm -rf /var/lib/apt/lists/*
+
+# Install plotting and HoloOcean dependencies into the active Python environment.
+COPY requirements.txt /tmp/openvins-requirements.txt
+RUN python3 -m venv --system-site-packages /opt/plotters && \
+  /opt/plotters/bin/python3 -m pip install -r /tmp/openvins-requirements.txt
+ENV PATH="/opt/plotters/bin:${PATH}"
 
 # Clone GTSAM
 WORKDIR /

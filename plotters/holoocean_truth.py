@@ -16,7 +16,7 @@ def read_bag_truth(bag_path, offset_interval, imu_topic):
     try:
         from rosbags.highlevel import AnyReader, AnyReaderError
     except ImportError as error:
-        raise ValueError('Install rosbags, numpy, and scipy in PLOTTER_PYTHON; see ReadMe.md') from error
+        raise ValueError('Install dependencies in the active environment with python3 -m pip install -r requirements.txt') from error
 
     rows = []
     clock = []

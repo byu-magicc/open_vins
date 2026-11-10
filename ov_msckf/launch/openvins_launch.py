@@ -94,7 +94,7 @@ def rviz_configuration(names, namespace):
 
 def extract_truth(bag_path, arguments):
     utility = os.path.join(get_package_share_directory("ov_msckf"), "scripts", "holoocean_truth.py")
-    result = subprocess.run([os.environ.get("PLOTTER_PYTHON", sys.executable), utility, bag_path, *arguments],
+    result = subprocess.run(["python3", utility, bag_path, *arguments],
                             capture_output=True, text=True, check=False)
     if result.stderr:
         print(result.stderr, end="", file=sys.stderr)

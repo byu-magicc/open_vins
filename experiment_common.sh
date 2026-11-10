@@ -3,10 +3,6 @@
 
 repository_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 workspace_directory=$(cd -- "${repository_directory}/../.." && pwd)
-plotter_python="${PLOTTER_PYTHON:-${workspace_directory}/.venv-plotters/bin/python}"
-if [[ ! -x "${plotter_python}" && -z "${PLOTTER_PYTHON:-}" ]]; then
-  plotter_python=/usr/bin/python3
-fi
 
 run_experiments() {
   local launch_file=$1
@@ -16,12 +12,11 @@ run_experiments() {
   if [[ "${holoocean}" == true ]]; then
     plot_arguments+=(--holoocean)
     if ! MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/openvins-plotters-matplotlib}" \
-      "${plotter_python}" -c 'import rosbags.highlevel, numpy, scipy, matplotlib' 2>/dev/null; then
-      echo "Error: install the HoloOcean dependencies in ReadMe.md and set PLOTTER_PYTHON." >&2
+      python3 -c 'import rosbags.highlevel, numpy, scipy, matplotlib'; then
+      echo "Error: install dependencies in the active environment: python3 -m pip install -r ${repository_directory}/requirements.txt" >&2
       return 1
     fi
   fi
-  export PLOTTER_PYTHON="${plotter_python}"
   source /opt/ros/jazzy/setup.bash
   cd "${workspace_directory}"
   if [[ "${OPENVINS_SKIP_BUILD:-0}" != 1 ]]; then
@@ -72,7 +67,7 @@ run_experiments() {
       return "${launch_status}"
     fi
     local plot_status=0
-    "${plotter_python}" "${repository_directory}/plotters/plot_results.py" \
+    python3 "${repository_directory}/plotters/plot_results.py" \
       "${mode_results}" "${mode_plots}" "${plot_arguments[@]}" || plot_status=$?
     if ((plot_status == 0)); then
       plotted_filters+=("${filter_type}")
@@ -96,7 +91,7 @@ run_experiments() {
     agent_name=$(basename -- "${agent_directory}")
     if ((${#plotted_filters[@]} > 1)); then
       local comparison_status=0
-      "${plotter_python}" "${repository_directory}/plotters/compare_estimators.py" \
+      python3 "${repository_directory}/plotters/compare_estimators.py" \
         "${results_directory}" "${agent_name}" "${plots_directory}/${agent_name}_estimator_comparison.svg" \
         --modes "${plotted_filters[@]}" "${plot_arguments[@]}" || comparison_status=$?
       if ((comparison_status != 0)); then
