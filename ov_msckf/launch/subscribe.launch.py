@@ -42,7 +42,7 @@ launch_args = [
     ),
     DeclareLaunchArgument(name="save_results", default_value="false", description="save selected estimator state and covariance CSV"),
     DeclareLaunchArgument(name="results_path", default_value="results", description="result directory, with namespace appended"),
-    DeclareLaunchArgument(name="filter_type", default_value="openvins", choices=["openvins", "factor_graph", "hybrid"]),
+    DeclareLaunchArgument(name="filter_type", default_value="openvins", description="Named estimator mode"),
     DeclareLaunchArgument(name="use_sim_time", default_value="false"),
 ]
 

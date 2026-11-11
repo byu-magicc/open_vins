@@ -289,7 +289,7 @@ void ROS2Visualizer::visualize_odometry(double timestamp) {
   std::shared_ptr<State> state = _app->get_state();
   Eigen::Matrix<double, 13, 1> state_plus = Eigen::Matrix<double, 13, 1>::Zero();
   Eigen::Matrix<double, 12, 12> cov_plus = Eigen::Matrix<double, 12, 12>::Zero();
-  if (_app->get_params().reports_factor_graph()) {
+  if (_app->get_params().filter_mode().estimate_source == EstimateSource::FACTOR_GRAPH) {
     const EstimatorResult estimator = _app->get_estimator_result();
     if (!estimator.valid)
       return;

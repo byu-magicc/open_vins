@@ -114,6 +114,7 @@ public:
 
   void record_estimator_results();
   EstimatorResult get_estimator_result();
+  /// Dispatch a fleet range exchange using the selected method; NONE leaves both estimators unchanged.
   void communicate_range(VioManager &neighbor, double timestamp, double neighbor_timestamp, double range, double variance);
   size_t successful_resets() const { return reset_success_count; }
   size_t skipped_resets() const { return reset_skip_count; }
@@ -182,8 +183,8 @@ protected:
   /// Set the configured IMU covariance and optionally perturb the initialized state.
   void initialize_imu_uncertainty();
 
-  /** Commit a pending graph update and record the selected estimator result. */
-  void finish_factor_graph_update();
+  /** Finish the camera update, including any graph work, and record the selected estimator result. */
+  void finish_update();
   void reset_from_factor_graph();
   void finish_openvins_reset();
 

@@ -9,10 +9,10 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from openvins_launch import graph_arguments, graph_parameters, initialization_arguments, initialization_parameters
+from openvins_launch import estimator_arguments, estimator_parameters, initialization_arguments, initialization_parameters
 
 launch_args = [
-    *graph_arguments(10),
+    *estimator_arguments(10),
     *initialization_arguments("true"),
     DeclareLaunchArgument(name="namespace", default_value="ov_msckf", description="namespace"),
     DeclareLaunchArgument(
@@ -176,7 +176,7 @@ def launch_setup(context):
         output='screen',
         on_exit=Shutdown(),
         parameters=[
-            graph_parameters(),
+            estimator_parameters(),
             initialization_parameters(context),
             {"sim_traj_path":
                 os.path.join(

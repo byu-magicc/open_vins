@@ -6,7 +6,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(__file__))
-from openvins_launch import graph_arguments, graph_parameters, camera_parameters, rviz_configuration
+from openvins_launch import estimator_arguments, estimator_parameters, camera_parameters, rviz_configuration
 from openvins_launch import initialization_arguments, initialization_parameters
 
 import yaml
@@ -56,7 +56,7 @@ def launch_setup(context):
         imu_topic = imu_configuration["imu0"]["rostopic"]
 
     parameters = {
-        **graph_parameters(),
+        **estimator_parameters(),
         "agent_names": names,
         **initialization_parameters(context),
         "bag_paths": bags,
@@ -121,7 +121,7 @@ def launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        *graph_arguments(10),
+        *estimator_arguments(10),
         *initialization_arguments("false"),
         DeclareLaunchArgument("bag_paths", description="Comma-separated ROS 2 bag directories or files"),
         DeclareLaunchArgument(

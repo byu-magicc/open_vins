@@ -13,6 +13,7 @@
 
 #include "FactorGraphFactors.h"
 #include "FactorGraphTypes.h"
+#include "core/FilterMode.h"
 
 #include <gtsam/linear/GaussianFactorGraph.h>
 #include <gtsam/linear/JacobianFactor.h>
@@ -39,7 +40,7 @@ class State;
 /** Parallel GTSAM estimator that consumes decisions made by VioManager. */
 class FactorGraphState {
 public:
-  explicit FactorGraphState(const VioManagerOptions &options);
+  FactorGraphState(const VioManagerOptions &options, FactorGraphMode mode);
 
   void feed_imu(const ov_core::ImuData &message);
   void initialize(const FactorGraphInitialization &initialization);
@@ -95,7 +96,7 @@ private:
   gtsam::FactorIndices pending_remove_factor_indices;
 
   std::unique_ptr<gtsam::ISAM2> optimizer;
-  bool hybrid;
+  const FactorGraphMode mode;
   bool use_qr;
   gtsam::NonlinearFactorGraph hybrid_graph;
   gtsam::Values hybrid_values;

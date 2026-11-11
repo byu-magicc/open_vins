@@ -142,8 +142,7 @@ void ov_msckf::run_fleet(const std::shared_ptr<rclcpp::Node> &node, std::vector<
                   auto &neighbor = *agents[selected_schedule->neighbor_index];
                   const double truth = (owner.groundtruth.segment<3>(5) - neighbor.groundtruth.segment<3>(5)).norm();
                   const double measurement = std::max(0.0, truth + range_noise(random_generator));
-                  if (owner.sys->get_params().runs_factor_graph())
-                    owner.sys->communicate_range(*neighbor.sys, owner.processed_time, neighbor.processed_time, measurement, range_variance);
+                  owner.sys->communicate_range(*neighbor.sys, owner.processed_time, neighbor.processed_time, measurement, range_variance);
                   selected_schedule->next_elapsed = selected_elapsed + next_range_interval(random_generator);
                   ++range_count;
                   const double elapsed = owner.processed_time + owner.camera_offset - owner.start_time;

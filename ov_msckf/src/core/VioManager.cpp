@@ -61,9 +61,9 @@ void VioManager::record_groundtruth(double timestamp, const Eigen::Matrix<double
     results->record_groundtruth(timestamp, groundtruth);
 }
 
-void VioManager::finish_factor_graph_update() {
+void VioManager::finish_update() {
   if (factor_graph != nullptr) {
-    if (params.resets_openvins())
+    if (params.filter_mode().graph_mode == FactorGraphMode::HYBRID)
       factor_graph->update_from_openvins(state);
     factor_graph->finish_update();
   }
@@ -73,19 +73,31 @@ void VioManager::finish_factor_graph_update() {
 }
 
 void VioManager::communicate_range(VioManager &neighbor, double timestamp, double neighbor_timestamp, double range, double variance) {
-  if (!factor_graph || !neighbor.factor_graph)
-    throw std::runtime_error("Ranging requires a factor graph on both vehicles");
-  if (params.resets_openvins())
-    factor_graph->update_from_openvins(state);
-  if (neighbor.params.resets_openvins())
-    neighbor.factor_graph->update_from_openvins(neighbor.state);
-  factor_graph->communicate(*neighbor.factor_graph, timestamp, neighbor_timestamp, range, variance);
-  estimator_result_cache_valid = false;
-  neighbor.estimator_result_cache_valid = false;
-  if (params.resets_openvins())
-    reset_from_factor_graph();
-  if (neighbor.params.resets_openvins())
-    neighbor.reset_from_factor_graph();
+  const auto &mode = params.filter_mode();
+  const auto &neighbor_mode = neighbor.params.filter_mode();
+  if (mode.range_method != neighbor_mode.range_method)
+    throw std::invalid_argument(std::string("Incompatible range methods for ") + mode.name + " and " + neighbor_mode.name);
+
+  switch (mode.range_method) {
+  case RangeMethod::NONE:
+    return;
+  case RangeMethod::FACTOR_GRAPH:
+    if (!factor_graph || !neighbor.factor_graph)
+      throw std::logic_error("Factor-graph ranging requires a graph on both vehicles");
+    if (mode.graph_mode == FactorGraphMode::HYBRID)
+      factor_graph->update_from_openvins(state);
+    if (neighbor_mode.graph_mode == FactorGraphMode::HYBRID)
+      neighbor.factor_graph->update_from_openvins(neighbor.state);
+    factor_graph->communicate(*neighbor.factor_graph, timestamp, neighbor_timestamp, range, variance);
+    estimator_result_cache_valid = false;
+    neighbor.estimator_result_cache_valid = false;
+    if (mode.graph_mode == FactorGraphMode::HYBRID)
+      reset_from_factor_graph();
+    if (neighbor_mode.graph_mode == FactorGraphMode::HYBRID)
+      neighbor.reset_from_factor_graph();
+    return;
+  }
+  throw std::logic_error("Unsupported range method");
 }
 
 void VioManager::reset_from_factor_graph() {
@@ -114,7 +126,7 @@ EstimatorResult VioManager::get_estimator_result() {
     return estimator_result_cache;
   EstimatorResult result;
   result.timestamp = state->_timestamp;
-  if (params.reports_factor_graph()) {
+  if (params.filter_mode().estimate_source == EstimateSource::FACTOR_GRAPH) {
     result = factor_graph->get_estimate(state->_timestamp);
   } else {
     result.valid = true;
@@ -150,7 +162,7 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   params.print_and_load_state();
   params.print_and_load_trackers();
 
-  if (params.runs_factor_graph())
+  if (params.filter_mode().graph_mode != FactorGraphMode::DISABLED)
     params.validate_graph_features();
 
   // This will globally set the thread count we will use
@@ -165,8 +177,8 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
     results = std::make_unique<EstimatorResults>(params.results_path);
 
   // Create the passive factor-graph estimator only when explicitly requested
-  if (params.runs_factor_graph()) {
-    factor_graph = std::make_unique<FactorGraphState>(params);
+  if (params.filter_mode().graph_mode != FactorGraphMode::DISABLED) {
+    factor_graph = std::make_unique<FactorGraphState>(params, params.filter_mode().graph_mode);
   }
 
   // Set the IMU intrinsics
@@ -330,7 +342,7 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
     }
     if (did_zupt_update) {
       assert(state->_timestamp == timestamp);
-      finish_factor_graph_update();
+      finish_update();
       propagator->clean_old_imu_measurements(timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       propagator->invalidate_cache();
@@ -404,7 +416,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
     }
     if (did_zupt_update) {
       assert(state->_timestamp == message.timestamp);
-      finish_factor_graph_update();
+      finish_update();
       propagator->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       propagator->invalidate_cache();
@@ -448,7 +460,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     propagator->propagate_and_clone(state, message.timestamp);
   }
   if (factor_graph != nullptr && state->_timestamp == message.timestamp) {
-    if (params.resets_openvins())
+    if (params.filter_mode().graph_mode == FactorGraphMode::HYBRID)
       factor_graph->update_from_openvins(state);
     else
       factor_graph->materialize_clone(message.timestamp);
@@ -461,7 +473,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if ((int)state->_clones_IMU.size() < std::min(state->_options.max_clone_size, 5)) {
     PRINT_DEBUG("waiting for enough clone states (%d of %d)....\n", (int)state->_clones_IMU.size(),
                 std::min(state->_options.max_clone_size, 5));
-    finish_factor_graph_update();
+    finish_update();
     return;
   }
 
@@ -469,7 +481,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if (state->_timestamp != message.timestamp) {
     PRINT_WARNING(RED "[PROP]: Propagator unable to propagate the state forward in time!\n" RESET);
     PRINT_WARNING(RED "[PROP]: It has been %.3f since last time we propagated\n" RESET, message.timestamp - state->_timestamp);
-    finish_factor_graph_update();
+    finish_update();
     return;
   }
   has_moved_since_zupt = true;
@@ -710,12 +722,12 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   }
 
   // Finally marginalize the oldest clone if needed
-  if (factor_graph != nullptr && params.resets_openvins())
+  if (factor_graph != nullptr && params.filter_mode().graph_mode == FactorGraphMode::HYBRID)
     factor_graph->update_from_openvins(state);
   StateHelper::marginalize_old_clone(state);
   rT7 = boost::posix_time::microsec_clock::local_time();
 
-  finish_factor_graph_update();
+  finish_update();
 
   //===================================================================================
   // Debug info, and stats tracking

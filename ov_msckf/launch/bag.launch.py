@@ -4,7 +4,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from openvins_launch import graph_arguments, graph_parameters, camera_parameters
+from openvins_launch import estimator_arguments, estimator_parameters, camera_parameters
 from openvins_launch import initialization_arguments, initialization_parameters
 
 from ament_index_python.packages import get_package_share_directory
@@ -33,7 +33,7 @@ def launch_setup(context):
         raise RuntimeError(f"Estimator config does not exist: {config_path}")
 
     parameters = {
-        **graph_parameters(),
+        **estimator_parameters(),
         "bag_path": bag_path,
         **initialization_parameters(context),
         "bag_start": ParameterValue(LaunchConfiguration("bag_start"), value_type=float),
@@ -101,7 +101,7 @@ def launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        *graph_arguments(10),
+        *estimator_arguments(10),
         *initialization_arguments("false"),
         DeclareLaunchArgument("bag_path", description="ROS 2 bag directory or file"),
         DeclareLaunchArgument("bag_start", default_value="0.0", description="Start offset from the first IMU header timestamp (seconds)"),

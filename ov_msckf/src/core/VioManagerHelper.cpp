@@ -211,13 +211,13 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       for (size_t i = 0; i < camera_timestamps_to_init.size(); i += clone_rate) {
         propagator->propagate_and_clone(state, camera_timestamps_to_init.at(i));
         if (factor_graph && state->_timestamp == camera_timestamps_to_init.at(i)) {
-          if (params.resets_openvins())
+          if (params.filter_mode().graph_mode == FactorGraphMode::HYBRID)
             factor_graph->update_from_openvins(state);
           else
             factor_graph->materialize_clone(camera_timestamps_to_init.at(i));
         }
         StateHelper::marginalize_old_clone(state);
-        finish_factor_graph_update();
+        finish_update();
       }
       PRINT_DEBUG(YELLOW "[init]: moved the state forward %.2f seconds\n" RESET, state->_timestamp - timestamp);
       thread_init_success = true;

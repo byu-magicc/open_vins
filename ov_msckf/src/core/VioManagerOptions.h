@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 
+#include "FilterMode.h"
 #include "state/StateOptions.h"
 #include "update/UpdaterOptions.h"
 #include "utils/NoiseManager.h"
@@ -109,14 +110,10 @@ struct VioManagerOptions {
   /// If we should only use the zupt at the very beginning static initialization phase
   bool zupt_only_at_beginning = false;
 
-  enum class FilterType { OPENVINS, FACTOR_GRAPH, HYBRID };
-
   /// Estimator exposed by this VioManager.
   FilterType filter_type = FilterType::OPENVINS;
 
-  bool runs_factor_graph() const { return filter_type != FilterType::OPENVINS; }
-  bool resets_openvins() const { return filter_type == FilterType::HYBRID; }
-  bool reports_factor_graph() const { return filter_type == FilterType::FACTOR_GRAPH; }
+  const FilterMode &filter_mode() const { return get_filter_mode(filter_type); }
 
   /// Graph/hybrid states support navigation, camera clones, and camera intrinsics.
   /// These are not supported solely because they haven't been implemented.
@@ -195,16 +192,9 @@ struct VioManagerOptions {
       parser->parse_config("zupt_noise_multiplier", zupt_noise_multiplier);
       parser->parse_config("zupt_max_disparity", zupt_max_disparity);
       parser->parse_config("zupt_only_at_beginning", zupt_only_at_beginning);
-      std::string filter_type_string = "openvins";
+      std::string filter_type_string = filter_mode().name;
       parser->parse_config("filter_type", filter_type_string, false);
-      if (filter_type_string == "openvins")
-        filter_type = FilterType::OPENVINS;
-      else if (filter_type_string == "factor_graph")
-        filter_type = FilterType::FACTOR_GRAPH;
-      else if (filter_type_string == "hybrid")
-        filter_type = FilterType::HYBRID;
-      else
-        throw std::invalid_argument("filter_type must be openvins, factor_graph, or hybrid");
+      filter_type = parse_filter_type(filter_type_string);
       parser->parse_config("relinearize_skip", relinearize_skip, false);
       parser->parse_config("relinearize_threshold", relinearize_threshold, false);
       parser->parse_config("use_qr", use_qr, false);
@@ -224,10 +214,7 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - zupt_noise_multiplier: %.2f\n", zupt_noise_multiplier);
     PRINT_DEBUG("  - zupt_max_disparity: %.4f\n", zupt_max_disparity);
     PRINT_DEBUG("  - zupt_only_at_beginning?: %d\n", zupt_only_at_beginning);
-    const char *filter_type_name = filter_type == FilterType::OPENVINS       ? "openvins"
-                                   : filter_type == FilterType::FACTOR_GRAPH ? "factor_graph"
-                                                                             : "hybrid";
-    PRINT_DEBUG("  - filter type: %s\n", filter_type_name);
+    PRINT_DEBUG("  - filter type: %s\n", filter_mode().name);
     PRINT_DEBUG("  - factor graph relinearize skip: %d\n", relinearize_skip);
     PRINT_DEBUG("  - factor graph relinearize threshold: %.3f\n", relinearize_threshold);
     PRINT_DEBUG("  - factor graph uses QR?: %d\n", use_qr);

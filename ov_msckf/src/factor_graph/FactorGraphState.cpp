@@ -95,8 +95,10 @@ Eigen::MatrixXd joint_marginal_covariance(const gtsam::ISAM2 &optimizer, const g
 
 } // namespace
 
-FactorGraphState::FactorGraphState(const VioManagerOptions &options)
-    : agent_id(options.factor_graph_agent_id), hybrid(options.resets_openvins()), use_qr(options.use_qr) {
+FactorGraphState::FactorGraphState(const VioManagerOptions &options, FactorGraphMode mode)
+    : agent_id(options.factor_graph_agent_id), mode(mode), use_qr(options.use_qr) {
+  if (mode != FactorGraphMode::FACTOR_GRAPH && mode != FactorGraphMode::HYBRID)
+    throw std::invalid_argument("FactorGraphState requires factor_graph or hybrid operation mode");
   options.validate_graph_features();
   if (agent_id >= (uint64_t{1} << 24))
     throw std::invalid_argument("Factor graph fleet ID exceeds the shared-key namespace");
@@ -117,7 +119,7 @@ FactorGraphState::FactorGraphState(const VioManagerOptions &options)
   optimizer_parameters.cacheLinearizedFactors = true;
   optimizer_parameters.findUnusedFactorSlots = true;
   optimizer_parameters.factorization = options.use_qr ? gtsam::ISAM2Params::QR : gtsam::ISAM2Params::CHOLESKY;
-  if (!hybrid)
+  if (mode == FactorGraphMode::FACTOR_GRAPH)
     optimizer = std::make_unique<gtsam::ISAM2>(optimizer_parameters);
 
   time_offset = options.calib_camimu_dt;
@@ -283,14 +285,14 @@ gtsam::PreintegratedCombinedMeasurements FactorGraphState::preintegrate(double s
 }
 
 gtsam::Values FactorGraphState::current_values() const {
-  gtsam::Values values = hybrid ? hybrid_values : optimizer->calculateEstimate();
+  gtsam::Values values = mode == FactorGraphMode::HYBRID ? hybrid_values : optimizer->calculateEstimate();
   for (const auto &entry : pending_values)
     values.insert(entry.key, entry.value);
   return values;
 }
 
 gtsam::GaussianFactorGraph::shared_ptr FactorGraphState::marginal_graph(const gtsam::KeyVector &keys) const {
-  if (hybrid) {
+  if (mode == FactorGraphMode::HYBRID) {
     const auto gaussian = hybrid_graph.linearize(hybrid_values);
     return use_qr ? gaussian->marginal(keys, gtsam::EliminateQR) : gaussian->marginal(keys);
   }
@@ -307,8 +309,9 @@ FactorGraphState::Frame &FactorGraphState::ensure_frame(double timestamp, const 
     throw std::runtime_error("Cannot insert a factor-graph pose behind the latest materialized pose");
 
   const Frame previous = frames.rbegin()->second;
-  const gtsam::Values values = hybrid ? gtsam::Values() : current_values();
-  const auto &previous_values = hybrid ? (pending_values.exists(previous.pose_key) ? pending_values : hybrid_values) : values;
+  const gtsam::Values values = mode == FactorGraphMode::HYBRID ? gtsam::Values() : current_values();
+  const auto &previous_values =
+      mode == FactorGraphMode::HYBRID ? (pending_values.exists(previous.pose_key) ? pending_values : hybrid_values) : values;
   const auto previous_pose = previous_values.at<gtsam::Pose3>(previous.pose_key);
   const auto previous_velocity = previous_values.at<gtsam::Vector3>(previous.velocity_key);
   const auto previous_bias = previous_values.at<gtsam::imuBias::ConstantBias>(previous.bias_key);
@@ -322,7 +325,7 @@ FactorGraphState::Frame &FactorGraphState::ensure_frame(double timestamp, const 
   frame.pose_key = pose_key(frame_index);
   frame.velocity_key = velocity_key(frame_index);
   frame.bias_key = bias_key(frame_index);
-  if (hybrid && openvins_state != nullptr) {
+  if (mode == FactorGraphMode::HYBRID && openvins_state != nullptr) {
     pending_values.insert(frame.pose_key, imu_pose(openvins_state->_imu->value()));
     pending_values.insert(frame.velocity_key, gtsam::Vector3(openvins_state->_imu->vel()));
     gtsam::Vector6 raw_bias;
@@ -348,7 +351,7 @@ void FactorGraphState::materialize_clone(double timestamp) {
 
 void FactorGraphState::update_from_openvins(const std::shared_ptr<State> &openvins_state) {
   std::lock_guard<std::mutex> lock(mutex);
-  if (!hybrid || !initialized || failed)
+  if (mode != FactorGraphMode::HYBRID || !initialized || failed)
     return;
   const Frame &frame = ensure_frame(openvins_state->_timestamp, openvins_state.get());
   auto &navigation_values = pending_values.exists(frame.pose_key) ? pending_values : hybrid_values;
@@ -398,7 +401,7 @@ void FactorGraphState::commit(bool full_update) {
   if (!full_update && !has_pending_update)
     return;
   try {
-    if (hybrid) {
+    if (mode == FactorGraphMode::HYBRID) {
       for (auto index : pending_remove_factor_indices)
         hybrid_graph.at(index).reset();
       hybrid_graph.push_back(pending_factors);
@@ -410,7 +413,7 @@ void FactorGraphState::commit(bool full_update) {
     }
     if (full_update) {
       gtsam::NonlinearFactorGraph graph;
-      if (hybrid) {
+      if (mode == FactorGraphMode::HYBRID) {
         graph = hybrid_graph;
       } else {
         for (const auto &factor : optimizer->getFactorsUnsafe())
@@ -421,8 +424,10 @@ void FactorGraphState::commit(bool full_update) {
       lm_parameters.linearSolverType =
           use_qr ? gtsam::NonlinearOptimizerParams::MULTIFRONTAL_QR : gtsam::NonlinearOptimizerParams::MULTIFRONTAL_CHOLESKY;
       const gtsam::Values optimized =
-          gtsam::LevenbergMarquardtOptimizer(graph, hybrid ? hybrid_values : optimizer->calculateEstimate(), lm_parameters).optimize();
-      if (hybrid) {
+          gtsam::LevenbergMarquardtOptimizer(graph, mode == FactorGraphMode::HYBRID ? hybrid_values : optimizer->calculateEstimate(),
+                                             lm_parameters)
+              .optimize();
+      if (mode == FactorGraphMode::HYBRID) {
         hybrid_values = optimized;
       } else {
         auto rebuilt_optimizer = std::make_unique<gtsam::ISAM2>(optimizer->params());
@@ -449,7 +454,7 @@ EstimatorResult FactorGraphState::get_estimate(double timestamp) {
   estimate.timestamp = timestamp;
   if (!initialized || failed || frames.empty())
     return estimate;
-  const gtsam::Values values = hybrid ? hybrid_values : optimizer->calculateEstimate();
+  const gtsam::Values values = mode == FactorGraphMode::HYBRID ? hybrid_values : optimizer->calculateEstimate();
   const Frame &frame = frames.rbegin()->second;
   const gtsam::Pose3 frame_pose = values.at<gtsam::Pose3>(frame.pose_key);
   gtsam::Pose3 pose = frame_pose;
@@ -511,7 +516,7 @@ EstimatorResult FactorGraphState::get_estimate(double timestamp) {
   transform.block<3, 6>(12, 9) = corrected_to_raw.topRows<3>();
   try {
     Eigen::MatrixXd input_covariance;
-    if (hybrid) {
+    if (mode == FactorGraphMode::HYBRID) {
       const auto marginal = marginal_graph(propagation_input_keys);
       const Eigen::MatrixXd information = marginal->hessian(gtsam::Ordering(propagation_input_keys)).first;
       const Eigen::LDLT<Eigen::MatrixXd> decomposition(0.5 * (information + information.transpose()));
@@ -542,7 +547,7 @@ FactorGraphResetSnapshot FactorGraphState::get_reset_snapshot(const std::vector<
     commit();
     if (failed)
       throw std::runtime_error("factor graph commit failed");
-    const gtsam::Values values = hybrid ? hybrid_values : optimizer->calculateEstimate();
+    const gtsam::Values values = mode == FactorGraphMode::HYBRID ? hybrid_values : optimizer->calculateEstimate();
     gtsam::KeyVector keys;
     std::vector<int> dimensions;
     auto add_key = [&](gtsam::Key key, int dimension) {
@@ -723,9 +728,9 @@ gtsam::Key FactorGraphState::declare_shared(double timestamp) {
   if (frame_index > std::numeric_limits<uint32_t>::max())
     throw std::overflow_error("Shared position frame index overflow");
   const gtsam::Key key = gtsam::Symbol('s', (uint64_t{agent_id} << 32) | frame_index);
-  if (!(hybrid ? hybrid_values.exists(key) : optimizer->valueExists(key)) && !pending_values.exists(key)) {
+  if (!(mode == FactorGraphMode::HYBRID ? hybrid_values.exists(key) : optimizer->valueExists(key)) && !pending_values.exists(key)) {
     const auto pose = pending_values.exists(frame.pose_key) ? pending_values.at<gtsam::Pose3>(frame.pose_key)
-                      : hybrid                              ? hybrid_values.at<gtsam::Pose3>(frame.pose_key)
+                      : mode == FactorGraphMode::HYBRID     ? hybrid_values.at<gtsam::Pose3>(frame.pose_key)
                                                             : optimizer->calculateEstimate<gtsam::Pose3>(frame.pose_key);
     pending_values.insert(key, gtsam::Point3(pose.translation()));
     pending_factors.emplace_shared<FactorGraphPosePositionFactor>(frame.pose_key, key);
@@ -744,7 +749,7 @@ void FactorGraphState::update_summary(const Summary &summary, size_t origin) {
 
   for (gtsam::Key key : summary.factor->keys()) {
     shared_keys.insert(key);
-    if (!(hybrid ? hybrid_values.exists(key) : optimizer->valueExists(key)) && !pending_values.exists(key))
+    if (!(mode == FactorGraphMode::HYBRID ? hybrid_values.exists(key) : optimizer->valueExists(key)) && !pending_values.exists(key))
       pending_values.insert(key, summary.values.at<gtsam::Point3>(key));
   }
   if (cached != cached_summaries.end()) {
@@ -753,7 +758,7 @@ void FactorGraphState::update_summary(const Summary &summary, size_t origin) {
     if (pending != pending_factors.end()) {
       pending_factors.erase(pending);
     } else {
-      const auto &committed = hybrid ? hybrid_graph : optimizer->getFactorsUnsafe();
+      const auto &committed = mode == FactorGraphMode::HYBRID ? hybrid_graph : optimizer->getFactorsUnsafe();
       const auto old = std::find(committed.begin(), committed.end(), old_factor);
       if (old == committed.end())
         throw std::logic_error("Cached distributed summary is missing from the graph");
@@ -776,7 +781,7 @@ FactorGraphState::Summary FactorGraphState::get_summary() {
   // Marginalize at the batch solution (hybrid) or Bayes-tree linearization point.
   const gtsam::KeyVector marginal_keys(shared_keys.begin(), shared_keys.end());
   const auto dense = boost::make_shared<gtsam::HessianFactor>(*marginal_graph(marginal_keys));
-  const auto &values = hybrid ? hybrid_values : optimizer->getLinearizationPoint();
+  const auto &values = mode == FactorGraphMode::HYBRID ? hybrid_values : optimizer->getLinearizationPoint();
 
   // Remove information already received, in the same linearization coordinates.
   gtsam::GaussianFactorGraph corrected;

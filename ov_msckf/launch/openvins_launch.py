@@ -55,9 +55,10 @@ def initialization_parameters(context):
     }
 
 
-def graph_arguments(relinearize_skip):
+def estimator_arguments(relinearize_skip):
     return [
-        DeclareLaunchArgument("filter_type", default_value="openvins", choices=["openvins", "factor_graph", "hybrid"]),
+        # C++ owns the supported mode names and validates both ROS and YAML selections.
+        DeclareLaunchArgument("filter_type", default_value="openvins", description="Named estimator mode"),
         DeclareLaunchArgument("relinearize_skip", default_value=str(relinearize_skip)),
         DeclareLaunchArgument("relinearize_threshold", default_value="0.1"),
         DeclareLaunchArgument("use_qr", default_value="false"),
@@ -66,7 +67,7 @@ def graph_arguments(relinearize_skip):
     ]
 
 
-def graph_parameters():
+def estimator_parameters():
     return {name: ParameterValue(LaunchConfiguration(name), value_type=kind) for name, kind in (
         ("filter_type", str), ("relinearize_skip", int), ("relinearize_threshold", float),
         ("use_qr", bool), ("save_results", bool), ("results_path", str),
