@@ -703,7 +703,7 @@ void FactorGraphState::communicate(FactorGraphState &neighbor, double timestamp,
   if (!initialized || !neighbor.initialized || failed || neighbor.failed)
     throw std::runtime_error("Ranging requires two initialized, healthy factor graphs");
 
-  // Add range neighbor summary and range to local graph
+  // This graph owns the range; the neighbor supplies its position and information first.
   const gtsam::Key position = neighbor.declare_shared(neighbor_timestamp);
   update_summary(neighbor.get_summary(), neighbor.agent_id);
   for (const auto &entry : neighbor.cached_summaries)
@@ -713,9 +713,8 @@ void FactorGraphState::communicate(FactorGraphState &neighbor, double timestamp,
   // GTSAM's native range Jacobian assumes distinct pose and point linearization positions.
   pending_factors.emplace_shared<gtsam::RangeFactor<gtsam::Pose3, gtsam::Point3>>(frame.pose_key, position, range,
                                                                                   gtsam::noiseModel::Isotropic::Variance(1, variance));
-  commit(true);
 
-  // Add local summary (which includes range) to neighbor graph
+  // get_summary commits the range before summarizing it.
   neighbor.update_summary(get_summary(), agent_id);
   for (const auto &entry : cached_summaries)
     neighbor.update_summary(entry.second.summary, entry.first);
@@ -774,7 +773,7 @@ void FactorGraphState::update_summary(const Summary &summary, size_t origin) {
 FactorGraphState::Summary FactorGraphState::get_summary() {
   if (shared_keys.empty() || local_shared_keys.empty())
     throw std::logic_error("Cannot summarize a graph without locally relevant shared positions");
-  commit();
+  commit(true);
   if (failed)
     throw std::runtime_error("factor graph range solve failed");
 
