@@ -63,7 +63,7 @@ def generate_launch_description():
     ]
     return LaunchDescription([
         DeclareLaunchArgument("bag_paths", description="Comma-separated HoloOcean ROS 2 bag directories or files"),
-        DeclareLaunchArgument("use_qr", default_value="true", choices=["true", "false"]),
+        DeclareLaunchArgument("use_qr", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("relinearize_skip", default_value="1", description="Number of iSAM2 updates between relinearization checks"),
         DeclareLaunchArgument(
             "initial_velocity_uncertainty_in_local_frame", default_value="true", choices=["true", "false"],
