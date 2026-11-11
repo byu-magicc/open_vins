@@ -33,6 +33,10 @@ def initialization_arguments(add_initial_error):
             "add_initial_error", default_value=add_initial_error, choices=["true", "false"],
             description="Add a zero-mean Gaussian error matching the configured initial IMU covariance",
         ),
+        DeclareLaunchArgument(
+            "initial_error_seed", default_value="0",
+            description="Initial IMU error seed, combined with each vehicle's fleet identity",
+        ),
     ]
 
 
@@ -47,6 +51,7 @@ def initialization_parameters(context):
         "initial_velocity_uncertainty_in_local_frame": ParameterValue(
             LaunchConfiguration("initial_velocity_uncertainty_in_local_frame"), value_type=bool),
         "add_initial_error": ParameterValue(LaunchConfiguration("add_initial_error"), value_type=bool),
+        "initial_error_seed": ParameterValue(LaunchConfiguration("initial_error_seed"), value_type=int),
     }
 
 

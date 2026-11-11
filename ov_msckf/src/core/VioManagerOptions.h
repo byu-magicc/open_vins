@@ -88,6 +88,9 @@ struct VioManagerOptions {
   /// Add a Gaussian error matching the configured initial IMU covariance.
   bool add_initial_error = false;
 
+  /// Initial IMU perturbation seed, combined with the fleet identity for independent vehicle errors.
+  int initial_error_seed = 0;
+
   /// Delay, in seconds, that we should wait from init before we start estimating SLAM features
   double dt_slam_delay = 2.0;
 
@@ -205,11 +208,15 @@ struct VioManagerOptions {
       parser->parse_config("relinearize_skip", relinearize_skip, false);
       parser->parse_config("relinearize_threshold", relinearize_threshold, false);
       parser->parse_config("use_qr", use_qr, false);
+      parser->parse_config("initial_error_seed", initial_error_seed, false);
       parser->parse_config("save_results", save_results, false);
       parser->parse_config("results_path", results_path, false);
       parser->parse_config("record_timing_information", record_timing_information);
       parser->parse_config("record_timing_filepath", record_timing_filepath);
     }
+    if (initial_error_seed < 0)
+      throw std::invalid_argument("initial_error_seed must be nonnegative");
+    PRINT_DEBUG("  - initial error seed: %d\n", initial_error_seed);
     PRINT_DEBUG("  - initial velocity uncertainty in local frame: %d\n", initial_velocity_uncertainty_in_local_frame);
     PRINT_DEBUG("  - dt_slam_delay: %.1f\n", dt_slam_delay);
     PRINT_DEBUG("  - zero_velocity_update: %d\n", try_zupt);

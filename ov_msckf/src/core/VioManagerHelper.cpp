@@ -66,7 +66,8 @@ void VioManager::initialize_imu_uncertainty() {
 
   if (params.add_initial_error) {
     // Initialize state with N(0, Cov) error added
-    std::mt19937 generator(std::random_device{}());
+    std::seed_seq seed{static_cast<uint32_t>(params.initial_error_seed), static_cast<uint32_t>(params.factor_graph_agent_id)};
+    std::mt19937 generator(seed);
     std::normal_distribution<double> normal(0.0, 1.0);
     Eigen::VectorXd standard_normal(state->_imu->size());
     for (int i = 0; i < standard_normal.size(); ++i) {
