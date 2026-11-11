@@ -182,7 +182,13 @@ void StateHelper::EKFUpdate(std::shared_ptr<State> state, const std::vector<std:
   }
 
   // Calculate our delta and update all our active states
-  Eigen::VectorXd dx = K * res;
+  apply_update(state, K * res, state->_Cov);
+}
+
+void StateHelper::apply_update(std::shared_ptr<State> state, const Eigen::VectorXd &dx, const Eigen::MatrixXd &covariance) {
+  assert(dx.rows() == state->_Cov.rows());
+  assert(covariance.rows() == dx.rows() && covariance.cols() == dx.rows());
+  state->_Cov = covariance;
   for (size_t i = 0; i < state->_variables.size(); i++) {
     state->_variables.at(i)->update(dx.block(state->_variables.at(i)->id(), 0, state->_variables.at(i)->size(), 1));
   }

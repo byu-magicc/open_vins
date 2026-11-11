@@ -2,7 +2,7 @@
 """Compare selected estimators at common valid timestamps for one agent.
 
 Inputs are results_directory/{mode}/{agent}/estimate.csv and groundtruth.csv.
-Use --modes to select two estimators, or --holoocean for exported HoloOcean CSVs.
+Use --modes to select estimators, or --holoocean for exported HoloOcean CSVs.
 Dashed curves show +/-2 standard deviations; --metrics saves error norms.
 """
 
@@ -18,7 +18,9 @@ from scipy.spatial.transform import Rotation
 
 from result_io import STATE_COLUMNS, load_csv, state_matrix as states
 
-MODES = ("openvins", "factor_graph", "hybrid")
+DEFAULT_MODES = ("openvins", "factor_graph", "hybrid")
+COLORS = {"openvins": "tab:blue", "factor_graph": "tab:orange", "hybrid": "tab:green",
+          "dmv": "tab:red", "pecmv": "tab:purple"}
 
 
 def load(path, covariance):
@@ -42,7 +44,7 @@ def main():
     parser.add_argument("results_directory", type=Path)
     parser.add_argument("agent")
     parser.add_argument("output", type=Path)
-    parser.add_argument("--modes", nargs="+", choices=MODES, default=MODES)
+    parser.add_argument("--modes", nargs="+", choices=COLORS, default=DEFAULT_MODES)
     parser.add_argument("--holoocean", action="store_true", help="Compare exported HoloOcean CSVs without assumed zero bias truth")
     parser.add_argument("--metrics", type=Path, help="Write RMSE and final error norms to CSV")
     args = parser.parse_args()
@@ -74,14 +76,18 @@ def main():
             raise ValueError(f"Ground truth differs in {mode}")
 
     range_times = []
-    ranges_path = args.results_directory / "hybrid" / "ranges.csv"
-    if "hybrid" in modes and ranges_path.is_file():
+    # Annotate the first selected cooperative mode's range schedule.
+    for mode in modes:
+        ranges_path = args.results_directory / mode / "ranges.csv"
+        if mode == "openvins" or not ranges_path.is_file():
+            continue
         with ranges_path.open(newline="") as stream:
             for event in csv.DictReader(stream):
                 if event["owner"] == args.agent:
                     range_times.append(float(event["owner_timestamp"]) - timestamps[0])
                 elif event["neighbor"] == args.agent:
                     range_times.append(float(event["neighbor_timestamp"]) - timestamps[0])
+        break
 
     time = timestamps - timestamps[0]
     estimates_state = {mode: states(data, columns) for mode, data in aligned_estimates.items()}
@@ -98,16 +104,15 @@ def main():
 
     labels = ("Position error (m)", "Attitude error (deg)", "Velocity error (m/s)", "Gyro bias error (rad/s)",
               "Accel bias error (m/s²)")
-    colors = {"openvins": "tab:blue", "factor_graph": "tab:orange", "hybrid": "tab:green"}
     rows = len(errors[modes[0]])
     figure, axes = plt.subplots(rows, 3, figsize=(15, 3.2 * rows), sharex=True)
     for row in range(rows):
         for axis in range(3):
             plot = axes[row, axis]
             for mode in modes:
-                plot.plot(time, errors[mode][row][:, axis], color=colors[mode], linewidth=1, label=mode.replace("_", " "))
-                plot.plot(time, bounds[mode][row][:, axis], color=colors[mode], linestyle="--", linewidth=.7)
-                plot.plot(time, -bounds[mode][row][:, axis], color=colors[mode], linestyle="--", linewidth=.7)
+                plot.plot(time, errors[mode][row][:, axis], color=COLORS[mode], linewidth=1, label=mode.replace("_", " "))
+                plot.plot(time, bounds[mode][row][:, axis], color=COLORS[mode], linestyle="--", linewidth=.7)
+                plot.plot(time, -bounds[mode][row][:, axis], color=COLORS[mode], linestyle="--", linewidth=.7)
             for event in range_times:
                 plot.axvline(event, color="grey", linestyle=":", linewidth=.7)
             plot.axhline(0, color="black", linewidth=.4)

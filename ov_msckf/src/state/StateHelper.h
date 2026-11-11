@@ -88,6 +88,9 @@ public:
   static void EKFUpdate(std::shared_ptr<State> state, const std::vector<std::shared_ptr<ov_type::Type>> &H_order, const Eigen::MatrixXd &H,
                         const Eigen::VectorXd &res, const Eigen::MatrixXd &R);
 
+  /// Apply a full posterior in covariance ordering using the normal Type update rules (no FEJ reset).
+  static void apply_update(std::shared_ptr<State> state, const Eigen::VectorXd &dx, const Eigen::MatrixXd &covariance);
+
   /**
    * @brief This will set the initial covaraince of the specified state elements.
    * Will also ensure that proper cross-covariances are inserted.

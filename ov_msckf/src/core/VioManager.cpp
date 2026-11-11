@@ -42,6 +42,7 @@
 #include "state/State.h"
 #include "state/StateHelper.h"
 #include "update/UpdaterMSCKF.h"
+#include "update/UpdaterRange.h"
 #include "update/UpdaterSLAM.h"
 #include "update/UpdaterZeroVelocity.h"
 
@@ -80,6 +81,16 @@ void VioManager::communicate_range(VioManager &neighbor, double timestamp, doubl
 
   switch (mode.range_method) {
   case RangeMethod::NONE:
+    return;
+  case RangeMethod::DMV:
+  case RangeMethod::PECMV:
+    if (!is_initialized_vio || !neighbor.is_initialized_vio || !std::isfinite(timestamp) || !std::isfinite(neighbor_timestamp) ||
+        timestamp != state->_timestamp || neighbor_timestamp != neighbor.state->_timestamp)
+      throw std::invalid_argument("EKF ranging requires initialized estimators at the supplied endpoint timestamps");
+    if (UpdaterRange::update(state, neighbor.state, mode.range_method, range, variance)) {
+      finish_openvins_reset();
+      neighbor.finish_openvins_reset();
+    }
     return;
   case RangeMethod::FACTOR_GRAPH:
     if (!factor_graph || !neighbor.factor_graph)
