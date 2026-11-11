@@ -10,6 +10,7 @@
 
 #include "FactorGraphFactors.h"
 
+#include <Eigen/QR>
 #include <gtsam/linear/HessianFactor.h>
 #include <gtsam/linear/JacobianFactor.h>
 #include <opencv2/calib3d.hpp>
@@ -98,25 +99,27 @@ boost::shared_ptr<gtsam::GaussianFactor> FactorGraphVisualFactor::linearize(cons
   gtsam::Vector rhs;
   this->computeJacobiansWithTriangulatedPoint(pose_jacobians, point_jacobian, rhs, cameras);
   noiseModel_->WhitenSystem(point_jacobian, rhs);
-  const gtsam::Matrix3 point_covariance = GraphCameraRig::PointCov(point_jacobian);
-  // As in GTSAM's JacobianFactorQ, Q is the Schur projector: Q^T Q = Q.
-  const gtsam::Matrix projector = gtsam::Matrix::Identity(point_jacobian.rows(), point_jacobian.rows()) -
-                                  point_jacobian * point_covariance * point_jacobian.transpose();
+  // Apply the point QR's Householder reflections directly, keeping only its left nullspace.
+  // Triangulation rejects degenerate tracks; using the numerical rank also avoids dropping valid rows near degeneracy.
+  const Eigen::ColPivHouseholderQR<gtsam::Matrix> point_qr(point_jacobian);
+  const Eigen::Index remaining_rows = point_jacobian.rows() - point_qr.rank();
   for (gtsam::Key key : keys_) {
     const bool intrinsic = std::find(calibration_keys.begin(), calibration_keys.end(), key) != calibration_keys.end();
-    gtsam::Matrix jacobian = gtsam::Matrix::Zero(projector.rows(), intrinsic ? 8 : 6);
+    gtsam::Matrix jacobian = gtsam::Matrix::Zero(point_jacobian.rows(), intrinsic ? 8 : 6);
     for (size_t index = 0; index < nonUniqueKeys_.size(); ++index) {
       if (!intrinsic && nonUniqueKeys_[index] == key)
-        jacobian += projector.middleCols(2 * index, 2) * noiseModel_->Whiten(pose_jacobians[index]);
+        jacobian.middleRows(2 * index, 2) += noiseModel_->Whiten(pose_jacobians[index]);
       if (intrinsic && calibration_keys.at(cameraIds_[index]) == key) {
         Eigen::Matrix<double, 2, 8> calibration_jacobian;
         cameras[index].project(*result_, boost::none, boost::none, calibration_jacobian);
-        jacobian += projector.middleCols(2 * index, 2) * noiseModel_->Whiten(calibration_jacobian);
+        jacobian.middleRows(2 * index, 2) += noiseModel_->Whiten(calibration_jacobian);
       }
     }
-    terms.emplace_back(key, jacobian);
+    const gtsam::Matrix rotated = point_qr.householderQ().adjoint() * jacobian;
+    terms.emplace_back(key, rotated.bottomRows(remaining_rows));
   }
-  const auto factor = boost::make_shared<gtsam::JacobianFactor>(terms, projector * rhs);
+  const gtsam::Vector rotated_rhs = point_qr.householderQ().adjoint() * rhs;
+  const auto factor = boost::make_shared<gtsam::JacobianFactor>(terms, rotated_rhs.tail(remaining_rows));
   if (!use_qr)
     return boost::make_shared<gtsam::HessianFactor>(*factor);
   return factor;
