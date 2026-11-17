@@ -130,6 +130,8 @@ State::State(StateOptions &options) {
     }
   }
 
+  _permanent_size = current_id;
+
   // Finally initialize our covariance to small value
   _Cov = std::pow(1e-3, 2) * Eigen::MatrixXd::Identity(current_id, current_id);
 

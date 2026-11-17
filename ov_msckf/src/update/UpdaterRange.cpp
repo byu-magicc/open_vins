@@ -112,12 +112,98 @@ bool dmv_update(const Eigen::MatrixXd &P, const Eigen::VectorXd &u, double a, do
   return true;
 }
 
+// Lift one endpoint's permanent-state gain numerator to its complete MSCKF state.
+// The conditional-independence approximation supplies correlations to clones and landmarks.
+void isokf_local_update(const Eigen::MatrixXd &prior, const Eigen::VectorXd &permanent_gain_numerator, double residual,
+                        double innovation_variance, Eigen::VectorXd &correction, Eigen::MatrixXd &posterior) {
+  const int permanent_size = permanent_gain_numerator.size();
+  const Eigen::MatrixXd lift =
+      StateHelper::isokf_transform(prior.topLeftCorner(permanent_size, permanent_size), prior.leftCols(permanent_size));
+  const Eigen::VectorXd gain_numerator = lift * permanent_gain_numerator;
+
+  correction = gain_numerator * (residual / innovation_variance);
+  posterior = prior - gain_numerator * gain_numerator.transpose() / innovation_variance;
+  posterior = (0.5 * (posterior + posterior.transpose())).eval();
+  covariance_rank(posterior);
+  if (!correction.allFinite())
+    throw std::runtime_error("IsoKF correction is not finite");
+}
+
 } // namespace
+
+void UpdaterRange::isokf_update(const std::shared_ptr<State> states[2], const Eigen::MatrixXd prior[2], const Eigen::Vector3d &direction,
+                                double residual, double variance) {
+  const auto &first = states[0];
+  const auto &second = states[1];
+  const int first_size = first->_permanent_size;
+  const int second_size = second->_permanent_size;
+
+  // Reconstruct the permanent cross-covariance from the two locally maintained factors.
+  // A pair that has never communicated starts uncorrelated.
+  const auto first_factor = first->_isokf_correlations.find(second);
+  const auto second_factor = second->_isokf_correlations.find(first);
+  if ((first_factor == first->_isokf_correlations.end()) != (second_factor == second->_isokf_correlations.end()))
+    throw std::logic_error("IsoKF has a one-sided correlation record");
+  Eigen::MatrixXd cross_covariance = Eigen::MatrixXd::Zero(first_size, second_size);
+  if (first_factor != first->_isokf_correlations.end())
+    cross_covariance.noalias() = first_factor->second * second_factor->second.transpose();
+
+  // Algorithm 3: form the joint range update on the two permanent state blocks.
+  Eigen::MatrixXd joint_prior(first_size + second_size, first_size + second_size);
+  joint_prior << prior[0].topLeftCorner(first_size, first_size), cross_covariance, cross_covariance.transpose(),
+      prior[1].topLeftCorner(second_size, second_size);
+  covariance_rank(joint_prior);
+
+  Eigen::VectorXd range_jacobian = Eigen::VectorXd::Zero(first_size + second_size);
+  range_jacobian.segment<3>(first->_imu->p()->id()) = direction;
+  range_jacobian.segment<3>(first_size + second->_imu->p()->id()) = -direction;
+  const Eigen::VectorXd joint_gain_numerator = joint_prior * range_jacobian;
+  const double innovation_variance = range_jacobian.dot(joint_gain_numerator) + variance;
+  if (!std::isfinite(innovation_variance) || innovation_variance <= 0)
+    throw std::runtime_error("IsoKF innovation variance is invalid");
+
+  // Stage both full-state posteriors and factor maps before modifying either endpoint.
+  Eigen::VectorXd correction[2];
+  Eigen::MatrixXd posterior[2];
+  decltype(first->_isokf_correlations) factors[] = {first->_isokf_correlations, second->_isokf_correlations};
+  for (int i = 0; i < 2; ++i) {
+    const int size = states[i]->_permanent_size;
+    const int offset = i == 0 ? 0 : first_size;
+    isokf_local_update(prior[i], joint_gain_numerator.segment(offset, size), residual, innovation_variance, correction[i], posterior[i]);
+
+    // Eq. (26): update correlations to third parties with P_ss^+ P_ss^-1.
+    // The communicating peer gets its exact pair factor below instead.
+    const Eigen::MatrixXd transform =
+        StateHelper::isokf_transform(prior[i].topLeftCorner(size, size), posterior[i].topLeftCorner(size, size));
+    for (auto it = factors[i].begin(); it != factors[i].end();) {
+      if (it->first.expired()) {
+        it = factors[i].erase(it);
+        continue;
+      }
+      if (it->first.lock() != states[1 - i])
+        it->second = (transform * it->second).eval();
+      if (!it->second.allFinite())
+        throw std::runtime_error("IsoKF factor is not finite");
+      ++it;
+    }
+  }
+
+  // Store the updated permanent cross-block using the paper's asymmetric C / I decomposition.
+  // Their product reconstructs the pair covariance at the next exchange.
+  factors[0][second] =
+      cross_covariance - joint_gain_numerator.head(first_size) * joint_gain_numerator.tail(second_size).transpose() / innovation_variance;
+  factors[1][first] = Eigen::MatrixXd::Identity(second_size, second_size);
+
+  StateHelper::apply_update(first, correction[0], posterior[0]);
+  StateHelper::apply_update(second, correction[1], posterior[1]);
+  first->_isokf_correlations = std::move(factors[0]);
+  second->_isokf_correlations = std::move(factors[1]);
+}
 
 bool UpdaterRange::update(std::shared_ptr<State> first, std::shared_ptr<State> second, RangeMethod method, double range, double variance) {
   if (first == second || !std::isfinite(range) || range < 0 || !std::isfinite(variance) || variance <= 0)
     throw std::invalid_argument("Invalid range exchange");
-  if (method != RangeMethod::DMV && method != RangeMethod::PECMV)
+  if (method != RangeMethod::DMV && method != RangeMethod::PECMV && method != RangeMethod::ISOKF)
     throw std::invalid_argument("Unsupported EKF range method");
 
   const Eigen::Vector3d difference = first->_imu->pos() - second->_imu->pos();
@@ -144,6 +230,11 @@ bool UpdaterRange::update(std::shared_ptr<State> first, std::shared_ptr<State> s
     const Eigen::Vector3d H = i == 0 ? direction : -direction;
     u[i] = prior[i].middleCols(position_id, 3) * H;
     projected[i] = std::max(0.0, H.dot(u[i].segment<3>(position_id)));
+  }
+
+  if (method == RangeMethod::ISOKF) {
+    isokf_update(states, prior, direction, residual, variance);
+    return true;
   }
 
   for (int i = 0; i < 2; ++i) {

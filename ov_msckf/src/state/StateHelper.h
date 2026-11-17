@@ -88,6 +88,9 @@ public:
   static void EKFUpdate(std::shared_ptr<State> state, const std::vector<std::shared_ptr<ov_type::Type>> &H_order, const Eigen::MatrixXd &H,
                         const Eigen::VectorXd &res, const Eigen::MatrixXd &R);
 
+  /// Compute posterior * prior^-1 on the positive-definite permanent block (IsoKF).
+  static Eigen::MatrixXd isokf_transform(const Eigen::MatrixXd &prior, const Eigen::MatrixXd &posterior);
+
   /// Apply a full posterior in covariance ordering using the normal Type update rules (no FEJ reset).
   static void apply_update(std::shared_ptr<State> state, const Eigen::VectorXd &dx, const Eigen::MatrixXd &covariance);
 

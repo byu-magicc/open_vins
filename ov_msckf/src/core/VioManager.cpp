@@ -84,6 +84,7 @@ void VioManager::communicate_range(VioManager &neighbor, double timestamp, doubl
     return;
   case RangeMethod::DMV:
   case RangeMethod::PECMV:
+  case RangeMethod::ISOKF:
     if (!is_initialized_vio || !neighbor.is_initialized_vio || !std::isfinite(timestamp) || !std::isfinite(neighbor_timestamp) ||
         timestamp != state->_timestamp || neighbor_timestamp != neighbor.state->_timestamp)
       throw std::invalid_argument("EKF ranging requires initialized estimators at the supplied endpoint timestamps");

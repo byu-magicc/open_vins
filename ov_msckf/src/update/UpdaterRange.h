@@ -23,16 +23,22 @@
 #define OV_MSCKF_UPDATER_RANGE_H
 
 #include "core/FilterMode.h"
+#include <Eigen/Core>
 #include <memory>
 
 namespace ov_msckf {
 class State;
 
-/// Stateless, two-sided DMV/PECMV range update. Both posteriors use the same pre-exchange priors.
+/// Two-sided DMV/PECMV/IsoKF range update; IsoKF factors live in State. Both posteriors use the same pre-exchange priors.
 class UpdaterRange {
 public:
   /// Returns false for undefined (coincident) range geometry; numerical errors throw before either state changes.
   static bool update(std::shared_ptr<State> first, std::shared_ptr<State> second, RangeMethod method, double range, double variance);
+
+private:
+  /// Joint permanent-state update, lifted to each endpoint's full state and staged before application.
+  static void isokf_update(const std::shared_ptr<State> states[2], const Eigen::MatrixXd prior[2], const Eigen::Vector3d &direction,
+                           double residual, double variance);
 };
 } // namespace ov_msckf
 #endif

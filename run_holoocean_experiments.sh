@@ -3,8 +3,8 @@
 set -eo pipefail
 
 source "$(dirname -- "${BASH_SOURCE[0]}")/experiment_common.sh"
-# Select one or more of: openvins factor_graph hybrid dmv pecmv.
-filter_types=(openvins factor_graph hybrid pecmv dmv)
+# Select one or more of: openvins factor_graph hybrid dmv pecmv isokf.
+filter_types=(openvins factor_graph hybrid dmv pecmv isokf)
 bags_directory="${workspace_directory}/data/holoocean"
 bag_names=(center_2 left_2 right_2)
 # Seconds from each bag's first /imu/data header; missing entries start at zero with truth initialization.

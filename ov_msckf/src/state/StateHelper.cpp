@@ -28,6 +28,7 @@
 #include "utils/print.h"
 
 #include <boost/math/distributions/chi_squared.hpp>
+#include <stdexcept>
 
 using namespace ov_core;
 using namespace ov_type;
@@ -89,6 +90,28 @@ void StateHelper::EKFPropagation(std::shared_ptr<State> state, const std::vector
   for (size_t i = 0; i < order_OLD.size(); i++) {
     std::shared_ptr<Type> var = order_OLD.at(i);
     Phi_Cov_PhiT.noalias() += Phi.block(0, Phi_id[i], Phi.rows(), var->size()) * Cov_PhiT.block(var->id(), 0, var->size(), Phi.rows());
+  }
+
+  // Algorithm 1. Only propagation of permanent variables changes the stored factors.
+  if (!state->_isokf_correlations.empty() && order_NEW.front()->id() < state->_permanent_size) {
+    Eigen::MatrixXd G = Eigen::MatrixXd::Identity(state->_permanent_size, state->_permanent_size);
+    const int start = order_NEW.front()->id();
+    const int rows = std::min<int>(Phi.rows(), state->_permanent_size - start);
+    G.middleRows(start, rows).setZero();
+    for (size_t i = 0; i < order_OLD.size(); ++i) {
+      const auto &var = order_OLD[i];
+      if (var->id() + var->size() > state->_permanent_size)
+        throw std::logic_error("IsoKF permanent propagation depends on a temporary variable");
+      G.block(start, var->id(), rows, var->size()) += Phi.block(0, Phi_id[i], rows, var->size());
+    }
+    for (auto it = state->_isokf_correlations.begin(); it != state->_isokf_correlations.end();) {
+      if (it->first.expired())
+        it = state->_isokf_correlations.erase(it);
+      else {
+        it->second = (G * it->second).eval();
+        ++it;
+      }
+    }
   }
 
   // We are good to go!
@@ -162,6 +185,15 @@ void StateHelper::EKFUpdate(std::shared_ptr<State> state, const std::vector<std:
   Eigen::MatrixXd K = M_a * Sinv.selfadjointView<Eigen::Upper>();
   // Eigen::MatrixXd K = M_a * S.inverse();
 
+  Eigen::MatrixXd isokf_A;
+  if (!state->_isokf_correlations.empty()) {
+    const int n = state->_permanent_size;
+    const Eigen::MatrixXd prior = state->_Cov.topLeftCorner(n, n);
+    const Eigen::MatrixXd posterior = prior - K.topRows(n) * M_a.topRows(n).transpose();
+    // Algorithm 2 with C_(x,j) approximated by P_(x,s) P_(s,s)^-1 C_(s,j).
+    isokf_A = isokf_transform(prior, posterior);
+  }
+
   // Update Covariance
   state->_Cov.triangularView<Eigen::Upper>() -= K * M_a.transpose();
   state->_Cov = state->_Cov.selfadjointView<Eigen::Upper>();
@@ -181,8 +213,29 @@ void StateHelper::EKFUpdate(std::shared_ptr<State> state, const std::vector<std:
     std::exit(EXIT_FAILURE);
   }
 
+  for (auto it = state->_isokf_correlations.begin(); it != state->_isokf_correlations.end();) {
+    if (it->first.expired())
+      it = state->_isokf_correlations.erase(it);
+    else {
+      it->second = (isokf_A * it->second).eval();
+      ++it;
+    }
+  }
+
   // Calculate our delta and update all our active states
   apply_update(state, K * res, state->_Cov);
+}
+
+Eigen::MatrixXd StateHelper::isokf_transform(const Eigen::MatrixXd &prior, const Eigen::MatrixXd &posterior) {
+  if (!prior.allFinite() || !posterior.allFinite())
+    throw std::runtime_error("IsoKF permanent covariance is not finite");
+  Eigen::LLT<Eigen::MatrixXd> decomposition(prior);
+  if (decomposition.info() != Eigen::Success)
+    throw std::runtime_error("IsoKF requires positive-definite permanent covariance");
+  Eigen::MatrixXd result = decomposition.solve(posterior.transpose()).transpose();
+  if (!result.allFinite())
+    throw std::runtime_error("IsoKF covariance solve failed");
+  return result;
 }
 
 void StateHelper::apply_update(std::shared_ptr<State> state, const Eigen::VectorXd &dx, const Eigen::MatrixXd &covariance) {

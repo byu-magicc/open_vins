@@ -28,12 +28,12 @@
 
 namespace ov_msckf {
 
-enum class FilterType { OPENVINS, FACTOR_GRAPH, HYBRID, DMV, PECMV };
+enum class FilterType { OPENVINS, FACTOR_GRAPH, HYBRID, DMV, PECMV, ISOKF };
 
 /// Disabled, independent iSAM2 estimation, or a graph seeded by and resetting the EKF.
 enum class FactorGraphMode { DISABLED, FACTOR_GRAPH, HYBRID };
 enum class EstimateSource { MSCKF, FACTOR_GRAPH };
-enum class RangeMethod { NONE, FACTOR_GRAPH, DMV, PECMV };
+enum class RangeMethod { NONE, FACTOR_GRAPH, DMV, PECMV, ISOKF };
 
 /** Named estimator modes. All modes use the shared MSCKF pipeline in VioManager. */
 struct FilterMode {
@@ -45,12 +45,13 @@ struct FilterMode {
 };
 
 /// Add an EKF mode here with its own range method and an explicitly disabled graph.
-inline const std::array<FilterMode, 5> &filter_modes() {
-  static constexpr std::array<FilterMode, 5> modes = {{
+inline const std::array<FilterMode, 6> &filter_modes() {
+  static constexpr std::array<FilterMode, 6> modes = {{
       {FilterType::OPENVINS, "openvins", FactorGraphMode::DISABLED, EstimateSource::MSCKF, RangeMethod::NONE},
       {FilterType::FACTOR_GRAPH, "factor_graph", FactorGraphMode::FACTOR_GRAPH, EstimateSource::FACTOR_GRAPH, RangeMethod::FACTOR_GRAPH},
       {FilterType::DMV, "dmv", FactorGraphMode::DISABLED, EstimateSource::MSCKF, RangeMethod::DMV},
       {FilterType::PECMV, "pecmv", FactorGraphMode::DISABLED, EstimateSource::MSCKF, RangeMethod::PECMV},
+      {FilterType::ISOKF, "isokf", FactorGraphMode::DISABLED, EstimateSource::MSCKF, RangeMethod::ISOKF},
       {FilterType::HYBRID, "hybrid", FactorGraphMode::HYBRID, EstimateSource::MSCKF, RangeMethod::FACTOR_GRAPH},
   }};
   return modes;

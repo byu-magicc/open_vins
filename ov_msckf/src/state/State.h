@@ -184,6 +184,13 @@ private:
   // This will allow it to access the below functions which should normally not be called
   // This prevents a developer from thinking that the "insert clone" will actually correctly add it to the covariance
   friend class StateHelper;
+  friend class UpdaterRange;
+
+  /// Fixed prefix: IMU and enabled calibration variables, excluding clones and SLAM landmarks.
+  int _permanent_size;
+
+  /// Luft et al., Algorithms 1-3: C_ij = sigma_ij sigma_ji^T on permanent states only.
+  std::map<std::weak_ptr<State>, Eigen::MatrixXd, std::owner_less<std::weak_ptr<State>>> _isokf_correlations;
 
   /// Covariance of all active variables
   Eigen::MatrixXd _Cov;

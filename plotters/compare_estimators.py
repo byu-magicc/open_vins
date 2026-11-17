@@ -20,7 +20,7 @@ from result_io import STATE_COLUMNS, load_csv, state_matrix as states
 
 DEFAULT_MODES = ("openvins", "factor_graph", "hybrid")
 COLORS = {"openvins": "tab:blue", "factor_graph": "tab:orange", "hybrid": "tab:green",
-          "dmv": "tab:red", "pecmv": "tab:purple"}
+          "dmv": "tab:red", "pecmv": "tab:purple", "isokf": "tab:brown"}
 
 
 def load(path, covariance):
