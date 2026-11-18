@@ -129,7 +129,10 @@ struct VioManagerOptions {
       throw std::invalid_argument("factor_graph/hybrid do not support ZUPT: set try_zupt to false");
   }
 
-  /// Fleet identity used only for exchanged factor-graph positions.
+  /// Maximum retained DDF-KF local ranges per partner; zero is unlimited.
+  int max_range_pair_count = 0;
+
+  /// Fleet identity for cooperative exchanges and initialization.
   size_t factor_graph_agent_id = 0;
 
   /// The multi-agent barrier records results after range exchanges.
@@ -195,6 +198,7 @@ struct VioManagerOptions {
       std::string filter_type_string = filter_mode().name;
       parser->parse_config("filter_type", filter_type_string, false);
       filter_type = parse_filter_type(filter_type_string);
+      parser->parse_config("max_range_pair_count", max_range_pair_count, false);
       parser->parse_config("relinearize_skip", relinearize_skip, false);
       parser->parse_config("relinearize_threshold", relinearize_threshold, false);
       parser->parse_config("use_qr", use_qr, false);
@@ -204,6 +208,8 @@ struct VioManagerOptions {
       parser->parse_config("record_timing_information", record_timing_information);
       parser->parse_config("record_timing_filepath", record_timing_filepath);
     }
+    if (max_range_pair_count < 0)
+      throw std::invalid_argument("max_range_pair_count must be nonnegative");
     if (initial_error_seed < 0)
       throw std::invalid_argument("initial_error_seed must be nonnegative");
     PRINT_DEBUG("  - initial error seed: %d\n", initial_error_seed);
@@ -215,6 +221,7 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - zupt_max_disparity: %.4f\n", zupt_max_disparity);
     PRINT_DEBUG("  - zupt_only_at_beginning?: %d\n", zupt_only_at_beginning);
     PRINT_DEBUG("  - filter type: %s\n", filter_mode().name);
+    PRINT_DEBUG("  - max range pair count: %d\n", max_range_pair_count);
     PRINT_DEBUG("  - factor graph relinearize skip: %d\n", relinearize_skip);
     PRINT_DEBUG("  - factor graph relinearize threshold: %.3f\n", relinearize_threshold);
     PRINT_DEBUG("  - factor graph uses QR?: %d\n", use_qr);

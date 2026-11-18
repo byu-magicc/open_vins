@@ -4,7 +4,7 @@ set -eo pipefail
 
 source "$(dirname -- "${BASH_SOURCE[0]}")/experiment_common.sh"
 
-# Select one or more of: openvins factor_graph hybrid dmv pecmv isokf.
+# Select one or more of: openvins factor_graph hybrid dmv pecmv isokf ddf_kf.
 filter_types=(openvins factor_graph hybrid)
 
 usage() {

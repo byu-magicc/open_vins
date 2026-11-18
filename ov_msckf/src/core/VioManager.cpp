@@ -41,6 +41,7 @@
 #include "state/Propagator.h"
 #include "state/State.h"
 #include "state/StateHelper.h"
+#include "update/UpdaterDDFKF.h"
 #include "update/UpdaterMSCKF.h"
 #include "update/UpdaterRange.h"
 #include "update/UpdaterSLAM.h"
@@ -73,7 +74,8 @@ void VioManager::finish_update() {
     record_estimator_results();
 }
 
-void VioManager::communicate_range(VioManager &neighbor, double timestamp, double neighbor_timestamp, double range, double variance) {
+void VioManager::communicate_range(VioManager &neighbor, double timestamp, double neighbor_timestamp, double event_time,
+                                   double range, double variance) {
   const auto &mode = params.filter_mode();
   const auto &neighbor_mode = neighbor.params.filter_mode();
   if (mode.range_method != neighbor_mode.range_method)
@@ -82,13 +84,18 @@ void VioManager::communicate_range(VioManager &neighbor, double timestamp, doubl
   switch (mode.range_method) {
   case RangeMethod::NONE:
     return;
+  case RangeMethod::DDF_KF:
   case RangeMethod::DMV:
   case RangeMethod::PECMV:
   case RangeMethod::ISOKF:
     if (!is_initialized_vio || !neighbor.is_initialized_vio || !std::isfinite(timestamp) || !std::isfinite(neighbor_timestamp) ||
         timestamp != state->_timestamp || neighbor_timestamp != neighbor.state->_timestamp)
       throw std::invalid_argument("EKF ranging requires initialized estimators at the supplied endpoint timestamps");
-    if (UpdaterRange::update(state, neighbor.state, mode.range_method, range, variance)) {
+    if (mode.range_method == RangeMethod::DDF_KF) {
+      updaterDDF->communicate(*neighbor.updaterDDF, event_time, range, variance);
+      finish_openvins_reset();
+      neighbor.finish_openvins_reset();
+    } else if (UpdaterRange::update(state, neighbor.state, mode.range_method, range, variance)) {
       finish_openvins_reset();
       neighbor.finish_openvins_reset();
     }
@@ -184,6 +191,8 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
 
   // Create the state!!
   state = std::make_shared<State>(params.state_options);
+  if (params.filter_mode().range_method == RangeMethod::DDF_KF)
+    updaterDDF = std::make_unique<UpdaterDDFKF>(state, params.factor_graph_agent_id, params.max_range_pair_count);
 
   if (params.save_results)
     results = std::make_unique<EstimatorResults>(params.results_path);

@@ -51,6 +51,7 @@ class State;
 class StateHelper;
 class FactorGraphState;
 class EstimatorResults;
+class UpdaterDDFKF;
 class UpdaterMSCKF;
 class UpdaterSLAM;
 class UpdaterZeroVelocity;
@@ -115,7 +116,8 @@ public:
   void record_estimator_results();
   EstimatorResult get_estimator_result();
   /// Dispatch a fleet range exchange using the selected method; NONE leaves both estimators unchanged.
-  void communicate_range(VioManager &neighbor, double timestamp, double neighbor_timestamp, double range, double variance);
+  void communicate_range(VioManager &neighbor, double timestamp, double neighbor_timestamp, double event_time, double range,
+                         double variance);
   size_t successful_resets() const { return reset_success_count; }
   size_t skipped_resets() const { return reset_skip_count; }
 
@@ -222,6 +224,9 @@ protected:
 
   /// Boolean if we are initialized or not
   bool is_initialized_vio = false;
+
+  /// Persistent DDF-KF shared states and fleet information.
+  std::unique_ptr<UpdaterDDFKF> updaterDDF;
 
   /// Our MSCKF feature updater
   std::shared_ptr<UpdaterMSCKF> updaterMSCKF;
